@@ -1,0 +1,192 @@
+{
+  "schemaVersion": "role-graph/v1",
+  "scopeId": "portfolio:branched",
+  "runId": "parallel-quality-loop",
+  "sequence": 1,
+  "generatedAt": "2026-07-31T10:05:00Z",
+  "title": "Parallel delivery with active correction",
+  "nodes": [
+    {
+      "id": "orchestration",
+      "role": "Orchestration",
+      "assignee": "P1",
+      "layer": 0,
+      "status": "running",
+      "task": "Route ready work",
+      "generation": 1
+    },
+    {
+      "id": "implementation-a",
+      "role": "Implementation A",
+      "assignee": "P2",
+      "layer": 1,
+      "status": "passed",
+      "task": "Build protocol support",
+      "generation": 1
+    },
+    {
+      "id": "implementation-b",
+      "role": "Implementation B",
+      "assignee": "P3",
+      "layer": 1,
+      "status": "passed",
+      "task": "Build the viewer",
+      "generation": 1
+    },
+    {
+      "id": "implementation-c",
+      "role": "Implementation C",
+      "assignee": "P4",
+      "layer": 1,
+      "status": "passed",
+      "task": "Build source mapping",
+      "generation": 1
+    },
+    {
+      "id": "integration",
+      "role": "Integration",
+      "assignee": "P5",
+      "layer": 2,
+      "status": "passed",
+      "task": "Combine accepted outputs",
+      "generation": 1
+    },
+    {
+      "id": "correction-owner",
+      "role": "Correction Owner",
+      "assignee": "P5",
+      "layer": 2,
+      "status": "retrying",
+      "task": "Own the active correction",
+      "generation": 2
+    },
+    {
+      "id": "independent-qc",
+      "role": "Independent QC",
+      "assignee": "P6",
+      "layer": 3,
+      "status": "passed",
+      "task": "Review the integrated graph",
+      "generation": 1
+    },
+    {
+      "id": "functional-qc",
+      "role": "Functional QC",
+      "assignee": "P7",
+      "layer": 4,
+      "status": "failed",
+      "task": "Verify live update behavior",
+      "generation": 1
+    }
+  ],
+  "edges": [
+    {
+      "id": "orchestration-to-a",
+      "source": "orchestration",
+      "target": "implementation-a",
+      "kind": "forward",
+      "status": "passed"
+    },
+    {
+      "id": "orchestration-to-b",
+      "source": "orchestration",
+      "target": "implementation-b",
+      "kind": "forward",
+      "status": "passed"
+    },
+    {
+      "id": "orchestration-to-c",
+      "source": "orchestration",
+      "target": "implementation-c",
+      "kind": "forward",
+      "status": "passed"
+    },
+    {
+      "id": "a-to-integration",
+      "source": "implementation-a",
+      "target": "integration",
+      "kind": "forward",
+      "status": "passed"
+    },
+    {
+      "id": "b-to-integration",
+      "source": "implementation-b",
+      "target": "integration",
+      "kind": "forward",
+      "status": "passed"
+    },
+    {
+      "id": "c-to-integration",
+      "source": "implementation-c",
+      "target": "integration",
+      "kind": "forward",
+      "status": "passed"
+    },
+    {
+      "id": "correction-to-integration",
+      "source": "correction-owner",
+      "target": "integration",
+      "kind": "forward",
+      "status": "retrying"
+    },
+    {
+      "id": "integration-to-independent-qc",
+      "source": "integration",
+      "target": "independent-qc",
+      "kind": "forward",
+      "status": "passed"
+    },
+    {
+      "id": "independent-to-functional-qc",
+      "source": "independent-qc",
+      "target": "functional-qc",
+      "kind": "forward",
+      "status": "failed"
+    }
+  ],
+  "failurePolicies": [
+    {
+      "gateNodeId": "functional-qc",
+      "returnToNodeId": "correction-owner",
+      "ownerNodeId": "correction-owner",
+      "resumeNodeId": "integration",
+      "rerunNodeIds": [
+        "integration",
+        "independent-qc",
+        "functional-qc"
+      ],
+      "excludedNodeIds": [
+        "implementation-a",
+        "implementation-b",
+        "implementation-c"
+      ]
+    }
+  ],
+  "activeFailureRoute": {
+    "gateNodeId": "functional-qc",
+    "returnToNodeId": "correction-owner",
+    "ownerNodeId": "correction-owner",
+    "resumeNodeId": "integration",
+    "rerunNodeIds": [
+      "integration",
+      "independent-qc",
+      "functional-qc"
+    ],
+    "excludedNodeIds": [
+      "implementation-a",
+      "implementation-b",
+      "implementation-c"
+    ],
+    "reason": "Live update status did not refresh",
+    "generation": 2
+  },
+  "events": [
+    {
+      "id": "functional-finding",
+      "timestamp": "2026-07-31T10:05:00Z",
+      "nodeId": "functional-qc",
+      "type": "finding",
+      "message": "Live update status did not refresh"
+    }
+  ]
+}

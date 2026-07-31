@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "role-graph/v1",
+  "scopeId": "portfolio:compact",
+  "runId": "linear-delivery",
+  "sequence": 1,
+  "generatedAt": "2026-07-31T10:00:00Z",
+  "title": "Compact delivery",
+  "nodes": [
+    {
+      "id": "coordination",
+      "role": "Coordination",
+      "assignee": "lead-agent",
+      "layer": 0,
+      "status": "running",
+      "task": "Route the current work",
+      "generation": 1
+    },
+    {
+      "id": "implementation",
+      "role": "Implementation",
+      "assignee": "builder-agent",
+      "layer": 1,
+      "status": "pending",
+      "task": "Build the requested change",
+      "generation": 1
+    },
+    {
+      "id": "verification",
+      "role": "Verification",
+      "assignee": "review-agent",
+      "layer": 2,
+      "status": "pending",
+      "task": "Verify the completed result",
+      "generation": 1
+    }
+  ],
+  "edges": [
+    {
+      "id": "coordination-to-implementation",
+      "source": "coordination",
+      "target": "implementation",
+      "kind": "forward",
+      "status": "active"
+    },
+    {
+      "id": "implementation-to-verification",
+      "source": "implementation",
+      "target": "verification",
+      "kind": "forward",
+      "status": "pending"
+    }
+  ],
+  "failurePolicies": [],
+  "activeFailureRoute": null,
+  "events": [
+    {
+      "id": "compact-started",
+      "timestamp": "2026-07-31T10:00:00Z",
+      "nodeId": "coordination",
+      "type": "status",
+      "message": "Coordination started"
+    }
+  ]
+}
