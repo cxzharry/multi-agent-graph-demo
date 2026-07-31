@@ -1,0 +1,13 @@
+{
+  "exit_code": "SUCCESS",
+  "best_iteration": 2,
+  "best_composite": 8.5,
+  "target": 8,
+  "meta_harness_used": true,
+  "executor": "writing-plans",
+  "orchestrator": "meta-harness",
+  "learning_owner": "delivery_architecture",
+  "failure_domain": "cross_repository_boundary",
+  "next_gate": "user_plan_approval"
+}
+

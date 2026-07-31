@@ -1,0 +1,35 @@
+{
+  "locked": true,
+  "target": 8,
+  "target_min": 7,
+  "max_iter": 2,
+  "orchestration_mode": "herdr-parallel-after-user-approval",
+  "meta_harness_used": true,
+  "criteria": [
+    {
+      "name": "protocol_correctness",
+      "target": 8
+    },
+    {
+      "name": "generic_flow_flexibility",
+      "target": 8
+    },
+    {
+      "name": "herdr_readonly_p1_safety",
+      "target": 8
+    },
+    {
+      "name": "lane_ownership_integration",
+      "target": 8
+    },
+    {
+      "name": "verification_completeness",
+      "target": 8
+    },
+    {
+      "name": "kiss_yagni",
+      "target": 8
+    }
+  ]
+}
+

@@ -1,0 +1,18 @@
+{
+  "iteration": 1,
+  "prior_scores": {
+    "composite": 7.8
+  },
+  "failure_class": "plan",
+  "targeted_criteria": [
+    "lane_ownership_integration",
+    "verification_completeness"
+  ],
+  "hypothesis": "A single viewer-owned repository plus explicit dependency and command ownership removes the blockers without redesigning the protocol.",
+  "what_not_to_retry": [
+    "Do not place adapter product code in herdr-orchestrator.",
+    "Do not sync or modify the installed Herdr skill.",
+    "Do not retain two-repository integration."
+  ]
+}
+
