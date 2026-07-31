@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "herdr-role-graph-manifest/v1",
+  "flowId": "standard-delivery",
+  "title": "Herdr standard delivery",
+  "nodes": [
+    {
+      "id": "orchestrator",
+      "role": "Orchestrator",
+      "assignee": "P1",
+      "layer": 0,
+      "task": "Route ready work",
+      "source": {"type": "slot", "id": "P1"}
+    },
+    {
+      "id": "implementation-a",
+      "role": "Implementation A",
+      "assignee": "P2",
+      "layer": 1,
+      "task": "Implement assigned lane",
+      "source": {"type": "lane", "id": "viewer_protocol_server"}
+    },
+    {
+      "id": "implementation-b",
+      "role": "Implementation B",
+      "assignee": "P3",
+      "layer": 1,
+      "task": "Implement assigned lane",
+      "source": {"type": "lane", "id": "viewer_frontend"}
+    },
+    {
+      "id": "implementation-c",
+      "role": "Implementation C",
+      "assignee": "P4",
+      "layer": 1,
+      "task": "Implement assigned lane",
+      "source": {"type": "lane", "id": "herdr_readonly_publisher"}
+    },
+    {
+      "id": "correction-owner",
+      "role": "Correction Owner",
+      "assignee": "P5",
+      "layer": 2,
+      "task": "Correct accepted findings",
+      "source": {"type": "lane", "id": "integration"}
+    },
+    {
+      "id": "integration",
+      "role": "Integration",
+      "assignee": "P5",
+      "layer": 3,
+      "task": "Integrate accepted lanes",
+      "source": {"type": "lane", "id": "integration"}
+    },
+    {
+      "id": "independent-qc",
+      "role": "Independent QC",
+      "assignee": "P6",
+      "layer": 4,
+      "task": "Review the integrated result",
+      "source": {"type": "lane", "id": "independent_review"}
+    },
+    {
+      "id": "functional-qc",
+      "role": "Functional QC",
+      "assignee": "P7",
+      "layer": 5,
+      "task": "Verify functional behavior",
+      "source": {"type": "lane", "id": "functional_qc"}
+    },
+    {
+      "id": "visual-qc",
+      "role": "Visual QC",
+      "assignee": "P8",
+      "layer": 5,
+      "task": "Verify visual behavior",
+      "source": {"type": "lane", "id": "visual_qc"}
+    },
+    {
+      "id": "persona-qc",
+      "role": "Persona QC",
+      "assignee": "P9",
+      "layer": 5,
+      "task": "Verify the orchestrator experience",
+      "source": {"type": "lane", "id": "persona_qc"}
+    },
+    {
+      "id": "delivery",
+      "role": "Delivery",
+      "assignee": "P5",
+      "layer": 6,
+      "task": "Deliver the accepted result",
+      "source": {"type": "lane", "id": "integration"}
+    }
+  ],
+  "edges": [
+    {"id": "orchestrator-to-a", "source": "orchestrator", "target": "implementation-a", "kind": "forward", "status": "active"},
+    {"id": "orchestrator-to-b", "source": "orchestrator", "target": "implementation-b", "kind": "forward", "status": "active"},
+    {"id": "orchestrator-to-c", "source": "orchestrator", "target": "implementation-c", "kind": "forward", "status": "active"},
+    {"id": "a-to-integration", "source": "implementation-a", "target": "integration", "kind": "forward", "status": "active"},
+    {"id": "b-to-integration", "source": "implementation-b", "target": "integration", "kind": "forward", "status": "active"},
+    {"id": "c-to-integration", "source": "implementation-c", "target": "integration", "kind": "forward", "status": "active"},
+    {"id": "correction-to-integration", "source": "correction-owner", "target": "integration", "kind": "forward", "status": "active"},
+    {"id": "integration-to-independent", "source": "integration", "target": "independent-qc", "kind": "forward", "status": "active"},
+    {"id": "independent-to-functional", "source": "independent-qc", "target": "functional-qc", "kind": "forward", "status": "active"},
+    {"id": "independent-to-visual", "source": "independent-qc", "target": "visual-qc", "kind": "forward", "status": "active"},
+    {"id": "independent-to-persona", "source": "independent-qc", "target": "persona-qc", "kind": "forward", "status": "active"},
+    {"id": "functional-to-delivery", "source": "functional-qc", "target": "delivery", "kind": "forward", "status": "active"},
+    {"id": "visual-to-delivery", "source": "visual-qc", "target": "delivery", "kind": "forward", "status": "active"},
+    {"id": "persona-to-delivery", "source": "persona-qc", "target": "delivery", "kind": "forward", "status": "active"}
+  ],
+  "failurePolicies": [
+    {
+      "gateNodeId": "independent-qc",
+      "returnToNodeId": "correction-owner",
+      "ownerNodeId": "correction-owner",
+      "resumeNodeId": "integration",
+      "rerunNodeIds": ["integration", "independent-qc"],
+      "excludedNodeIds": ["implementation-a", "implementation-b", "implementation-c"]
+    },
+    {
+      "gateNodeId": "functional-qc",
+      "returnToNodeId": "correction-owner",
+      "ownerNodeId": "correction-owner",
+      "resumeNodeId": "integration",
+      "rerunNodeIds": ["integration", "independent-qc", "functional-qc"],
+      "excludedNodeIds": ["implementation-a", "implementation-b", "implementation-c"]
+    },
+    {
+      "gateNodeId": "visual-qc",
+      "returnToNodeId": "correction-owner",
+      "ownerNodeId": "correction-owner",
+      "resumeNodeId": "integration",
+      "rerunNodeIds": ["integration", "independent-qc", "visual-qc"],
+      "excludedNodeIds": ["implementation-a", "implementation-b", "implementation-c"]
+    },
+    {
+      "gateNodeId": "persona-qc",
+      "returnToNodeId": "correction-owner",
+      "ownerNodeId": "correction-owner",
+      "resumeNodeId": "integration",
+      "rerunNodeIds": ["integration", "independent-qc", "persona-qc"],
+      "excludedNodeIds": ["implementation-a", "implementation-b", "implementation-c"]
+    }
+  ]
+}
