@@ -1,0 +1,187 @@
+import {mkdtemp, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+
+import {afterEach, beforeEach, describe, expect, test} from 'vitest';
+
+import {createApp} from '../server/app.js';
+
+function snapshot(scopeId = 'scope-a', runId = 'run-1', sequence = 1) {
+  return {
+    schemaVersion: 'role-graph/v1',
+    scopeId,
+    runId,
+    sequence,
+    generatedAt: `2026-07-31T10:00:${String(sequence).padStart(2, '0')}Z`,
+    title: `${scopeId} ${runId}`,
+    nodes: [
+      {
+        id: 'orchestrator',
+        role: 'Orchestrator',
+        assignee: 'P1',
+        status: 'running',
+        task: 'Route work',
+        generation: 1,
+      },
+    ],
+    edges: [],
+    failurePolicies: [],
+    activeFailureRoute: null,
+    events: [],
+  };
+}
+
+async function listen(server) {
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const {port} = server.address();
+  return `http://127.0.0.1:${port}`;
+}
+
+async function close(server) {
+  if (!server?.listening) return;
+  await new Promise(resolve => server.close(resolve));
+}
+
+async function post(baseUrl, body, headers = {}) {
+  return fetch(`${baseUrl}/api/snapshots`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json', ...headers},
+    body: JSON.stringify(body),
+  });
+}
+
+async function openSnapshotStream(url) {
+  const controller = new AbortController();
+  const response = await fetch(url, {signal: controller.signal});
+  expect(response.status).toBe(200);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';
+
+  async function nextSnapshot() {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) throw new Error('SSE stream ended before a snapshot arrived');
+      buffered += decoder.decode(value, {stream: true});
+      const boundary = buffered.indexOf('\n\n');
+      if (boundary === -1) continue;
+      const message = buffered.slice(0, boundary);
+      buffered = buffered.slice(boundary + 2);
+      const data = message
+        .split('\n')
+        .find(line => line.startsWith('data: '));
+      if (data) return JSON.parse(data.slice(6));
+    }
+  }
+
+  return {
+    nextSnapshot,
+    close() {
+      controller.abort();
+    },
+  };
+}
+
+describe('role graph server', () => {
+  let directory;
+  let dataFile;
+  let server;
+  let baseUrl;
+
+  beforeEach(async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'role-graph-server-'));
+    dataFile = path.join(directory, 'snapshots.jsonl');
+    server = createApp({dataFile});
+    baseUrl = await listen(server);
+  });
+
+  afterEach(async () => {
+    await close(server);
+    await rm(directory, {recursive: true, force: true});
+  });
+
+  test('accepts and persists a valid snapshot', async () => {
+    const response = await post(baseUrl, snapshot());
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual(snapshot());
+  });
+
+  test('returns 400 for an invalid snapshot', async () => {
+    const input = snapshot();
+    input.nodes[0].status = 'working';
+    const response = await post(baseUrl, input);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toMatch(/node status/i);
+  });
+
+  test('returns 409 for a stale sequence', async () => {
+    expect((await post(baseUrl, snapshot())).status).toBe(202);
+
+    const response = await post(baseUrl, snapshot());
+
+    expect(response.status).toBe(409);
+  });
+
+  test('lists graphs and returns only the requested snapshot key', async () => {
+    await post(baseUrl, snapshot('scope-a', 'shared-run', 1));
+    await post(baseUrl, snapshot('scope-b', 'shared-run', 2));
+
+    const graphsResponse = await fetch(`${baseUrl}/api/graphs`);
+    const snapshotResponse = await fetch(
+      `${baseUrl}/api/snapshot?scopeId=scope-a&runId=shared-run`,
+    );
+
+    expect(await graphsResponse.json()).toHaveLength(2);
+    expect(await snapshotResponse.json()).toMatchObject({
+      scopeId: 'scope-a',
+      runId: 'shared-run',
+      sequence: 1,
+    });
+  });
+
+  test('filters snapshot events by exact scope and run', async () => {
+    const streamA = await openSnapshotStream(
+      `${baseUrl}/api/stream?scopeId=scope-a&runId=shared-run`,
+    );
+    const streamB = await openSnapshotStream(
+      `${baseUrl}/api/stream?scopeId=scope-b&runId=shared-run`,
+    );
+
+    try {
+      const nextA = streamA.nextSnapshot();
+      const nextB = streamB.nextSnapshot();
+      await post(baseUrl, snapshot('scope-a', 'shared-run', 1));
+      await post(baseUrl, snapshot('scope-b', 'shared-run', 1));
+
+      await expect(nextA).resolves.toMatchObject({scopeId: 'scope-a'});
+      await expect(nextB).resolves.toMatchObject({scopeId: 'scope-b'});
+    } finally {
+      streamA.close();
+      streamB.close();
+    }
+  });
+
+  test('enforces bearer auth only when an ingest token is configured', async () => {
+    const openResponse = await post(baseUrl, snapshot());
+    expect(openResponse.status).toBe(202);
+
+    await close(server);
+    server = createApp({dataFile: path.join(directory, 'protected.jsonl'), ingestToken: 'secret'});
+    baseUrl = await listen(server);
+
+    expect((await post(baseUrl, snapshot())).status).toBe(401);
+    expect(
+      (await post(baseUrl, snapshot(), {authorization: 'Bearer wrong'})).status,
+    ).toBe(401);
+    expect(
+      (await post(baseUrl, snapshot(), {authorization: 'Bearer secret'})).status,
+    ).toBe(202);
+    expect((await fetch(`${baseUrl}/api/graphs`)).status).toBe(200);
+  });
+});
