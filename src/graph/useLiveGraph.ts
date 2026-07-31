@@ -20,8 +20,7 @@ export function selectedGraphFromList(
   requested: GraphSelection | null,
 ): GraphSummary | null {
   if (requested) {
-    const exact = graphs.find(graph => graphMatchesSelection(graph, requested));
-    if (exact) return exact;
+    return graphs.find(graph => graphMatchesSelection(graph, requested)) ?? null;
   }
   return graphs[0] ?? null;
 }
@@ -66,16 +65,13 @@ export function useLiveGraph() {
         if (!response.ok) throw new Error(`Graph list returned ${response.status}`);
         const nextGraphs = (await response.json()) as GraphSummary[];
         if (!active) return;
-        const nextGraph = selectedGraphFromList(
-          nextGraphs,
-          graphSelectionFromLocation(window.location.search),
-        );
+        const requested = graphSelectionFromLocation(window.location.search);
+        const nextGraph = selectedGraphFromList(nextGraphs, requested);
+        const fallbackSelection = nextGraph
+          ? {scopeId: nextGraph.scopeId, runId: nextGraph.runId}
+          : null;
         setGraphs(nextGraphs);
-        setSelection(
-          nextGraph
-            ? {scopeId: nextGraph.scopeId, runId: nextGraph.runId}
-            : null,
-        );
+        setSelection(requested ?? fallbackSelection);
         setError(null);
       } catch (loadError) {
         if (active) {

@@ -107,7 +107,23 @@ try {
   await postSnapshot(baseUrl, compact);
   await postSnapshot(baseUrl, branched);
 
-  await page.reload();
+  const missingSelection = {
+    scopeId: 'portfolio:missing',
+    runId: 'unknown-run',
+  };
+  await page.goto(
+    `${baseUrl}/?${new URLSearchParams(missingSelection).toString()}`,
+  );
+  await page
+    .locator('[data-testid="empty-state"]')
+    .getByText('Graph not found')
+    .waitFor();
+  assert.equal(await page.locator('[data-testid="role-node"]').count(), 0);
+  const missingUrl = new URL(page.url());
+  assert.equal(missingUrl.searchParams.get('scopeId'), missingSelection.scopeId);
+  assert.equal(missingUrl.searchParams.get('runId'), missingSelection.runId);
+
+  await page.goto(baseUrl);
   await waitForNodeCount(page, branched.nodes.length);
 
   const selector = page.locator('[data-testid="graph-selector"]');

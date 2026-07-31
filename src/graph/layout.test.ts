@@ -206,6 +206,12 @@ describe('live graph selection', () => {
     expect(graphSelectionFromLocation('?scopeId=scope%3Anew')).toBeNull();
   });
 
+  test('does not replace a missing complete URL key with the newest graph', () => {
+    const missing = {scopeId: 'scope:missing', runId: 'run/missing'};
+
+    expect(selectedGraphFromList(summaries, missing)).toBeNull();
+  });
+
   test('matches snapshots only when both scope and run are exact', () => {
     const selected = {scopeId: 'scope:new', runId: 'run/new'};
 

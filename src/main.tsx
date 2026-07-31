@@ -88,6 +88,10 @@ function App() {
   }, [layout.feedbackGutterX, layout.forwardEdges, snapshot]);
 
   const selectedValue = selection ? selectionQuery(selection) : '';
+  const missingSelection = Boolean(
+    selection &&
+      !graphs.some(graph => graphMatchesSelection(graph, selection)),
+  );
   const timeline = snapshot ? [...snapshot.events].slice(-12).reverse() : [];
 
   function handleGraphSelection(value: string) {
@@ -120,6 +124,11 @@ function App() {
               onChange={event => handleGraphSelection(event.target.value)}
             >
               {graphs.length === 0 && <option value="">No saved graphs</option>}
+              {missingSelection && selection && (
+                <option value={selectedValue}>
+                  Missing · {selection.scopeId} / {selection.runId}
+                </option>
+              )}
               {graphs.map(graph => (
                 <option key={selectionQuery(graph)} value={selectionQuery(graph)}>
                   {graph.title} · {graph.scopeId} / {graph.runId}
@@ -166,10 +175,18 @@ function App() {
               <span className="empty-mark" aria-hidden="true">
                 ◌
               </span>
-              <h2>{loading ? 'Loading saved graphs' : 'No graph selected'}</h2>
+              <h2>
+                {loading
+                  ? 'Loading saved graphs'
+                  : missingSelection
+                    ? 'Graph not found'
+                    : 'No graph selected'}
+              </h2>
               <p>
                 {loading
                   ? 'Checking the local snapshot store.'
+                  : missingSelection && selection
+                    ? `No snapshot exists for ${selection.scopeId} / ${selection.runId}.`
                   : 'Publish an immutable snapshot to POST /api/snapshots to begin.'}
               </p>
             </div>
