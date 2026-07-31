@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/events.jsonl
+artifacts/browser-libs/
+artifacts/*.webm
+artifacts/*.mp4
+artifacts/*.png
+*.log
+.DS_Store

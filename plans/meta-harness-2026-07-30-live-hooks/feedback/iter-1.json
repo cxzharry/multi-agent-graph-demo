@@ -1,0 +1,15 @@
+{
+  "iteration": 1,
+  "scores": {
+    "runtime_event_hooks": 8,
+    "live_graph_ui": 8,
+    "verification_artifacts": 8,
+    "operability": 8
+  },
+  "evidence": {
+    "runtime_event_hooks": "POST /events, GET /events, GET /stream implemented; npm run simulate persisted 13 events.",
+    "live_graph_ui": "React Flow Live/Replay modes; EventSource /stream; 4 nodes; connection badge/event timeline.",
+    "verification_artifacts": "npm run build exit 0; server smoke exit 0; live-graph-screenshot.png size 544481; static SVG size 9334.",
+    "operability": "README documents npm run server, simulate, emit-event hook, API endpoints."
+  }
+}

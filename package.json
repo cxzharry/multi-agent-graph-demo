@@ -1,0 +1,30 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "server": "node server.js",
+    "simulate": "node scripts/simulate-run.js",
+    "demo": "npm run build && npm run server",
+    "screenshot:fallback": "node scripts/render-static-graph-svg.js artifacts/static-graph-screenshot.svg",
+    "record": "node scripts/record-demo.mjs",
+    "convert:mp4": "node scripts/convert-mp4.mjs",
+    "record:real": "node scripts/record-real-task.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "@xyflow/react": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "playwright": "^1.62.1"
+  }
+}

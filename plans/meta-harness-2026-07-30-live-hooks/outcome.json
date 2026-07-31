@@ -1,0 +1,16 @@
+{
+  "exit": "SUCCESS",
+  "best_iteration": 1,
+  "target": 7,
+  "scores": {
+    "runtime_event_hooks": 8,
+    "live_graph_ui": 8,
+    "verification_artifacts": 8,
+    "operability": 8
+  },
+  "artifacts": [
+    "/home/harry/.hermes/hermes-agent/demos/multi-agent-graph-demo/artifacts/live-graph-screenshot.png",
+    "/home/harry/.hermes/hermes-agent/demos/multi-agent-graph-demo/artifacts/static-graph-screenshot.svg"
+  ],
+  "notes": "Browser screenshot fixed without sudo by local apt package extraction into artifacts/browser-libs and LD_LIBRARY_PATH."
+}

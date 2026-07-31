@@ -1,0 +1,27 @@
+{
+  "locked": true,
+  "target": 7,
+  "target_min": 6,
+  "criteria": [
+    {
+      "name": "runtime_event_hooks",
+      "desc": "Hook scripts/API can ingest real events and persist/broadcast them",
+      "target": 7
+    },
+    {
+      "name": "live_graph_ui",
+      "desc": "React Flow UI updates from real SSE events and still offers compact viral visual style",
+      "target": 7
+    },
+    {
+      "name": "verification_artifacts",
+      "desc": "Build, API simulation, browser smoke, and screenshot have fresh evidence",
+      "target": 7
+    },
+    {
+      "name": "operability",
+      "desc": "README/run scripts make it easy to run server, simulate, and integrate hooks",
+      "target": 7
+    }
+  ]
+}

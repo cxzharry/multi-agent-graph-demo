@@ -1,0 +1,10 @@
+import ffmpeg from '@ffmpeg-installer/ffmpeg';
+import { spawnSync } from 'child_process';
+import fs from 'fs';
+const input = process.argv[2] || 'artifacts/live-graph-demo.webm';
+const output = process.argv[3] || 'artifacts/live-graph-demo.mp4';
+const args = ['-y','-i',input,'-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',output];
+const r = spawnSync(ffmpeg.path, args, { stdio: 'inherit' });
+if (r.status !== 0) process.exit(r.status || 1);
+if (!fs.existsSync(output) || fs.statSync(output).size === 0) process.exit(2);
+console.log(output);
