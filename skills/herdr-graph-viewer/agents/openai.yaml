@@ -1,0 +1,6 @@
+interface:
+  display_name: "Herdr Graph Viewer"
+  short_description: "Open the current Herdr run as a live graph"
+  default_prompt: "Use $herdr-graph-viewer to open the active Herdr orchestration run on localhost."
+policy:
+  allow_implicit_invocation: false
