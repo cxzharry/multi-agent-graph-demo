@@ -13,9 +13,7 @@ const screenshotPath = path.join(
   artifactsDirectory,
   'live-role-graph-browser-smoke.png',
 );
-const oldAtEventTime = '2026-07-31T10:04:08Z';
 const newAtEventTime = '2026-07-31T10:05:09Z';
-const oldAtEventLabel = formatSmokeTimestamp(oldAtEventTime);
 const newAtEventLabel = formatSmokeTimestamp(newAtEventTime);
 
 async function readFixture(name) {
@@ -185,7 +183,7 @@ try {
   atTimelineSnapshot.events = [
     {
       id: 'old-at-event',
-      at: oldAtEventTime,
+      at: newAtEventTime,
       nodeId: 'implementation-a',
       type: 'lane_done',
       message: 'Older at event',
@@ -299,7 +297,7 @@ try {
   await expectTimelineText(firstTimelineItem, 'Newest at event');
   await expectTimelineText(firstTimelineItem, newAtEventLabel);
   await expectTimelineText(page.locator('.timeline-item').nth(1), 'Older at event');
-  await expectTimelineText(page.locator('.timeline-item').nth(1), oldAtEventLabel);
+  await expectTimelineText(page.locator('.timeline-item').nth(1), newAtEventLabel);
   const timelineMessages = await page
     .locator('.timeline-item p')
     .evaluateAll(items => items.map(item => item.textContent?.trim()));

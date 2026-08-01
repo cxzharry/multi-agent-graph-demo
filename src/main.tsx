@@ -120,11 +120,7 @@ function App() {
     selection &&
       !graphs.some(graph => graphMatchesSelection(graph, selection)),
   );
-  const timeline = snapshot
-    ? [...snapshot.events]
-        .sort((left, right) => eventTime(right) - eventTime(left))
-        .slice(0, 12)
-    : [];
+  const timeline = snapshot ? [...snapshot.events].slice(-12).reverse() : [];
 
   function handleGraphSelection(value: string) {
     const graph = graphs.find(item => selectionQuery(item) === value);
@@ -296,12 +292,6 @@ function TimelineItem({event}: {event: GraphEvent}) {
       </div>
     </article>
   );
-}
-
-function eventTime(event: GraphEvent) {
-  const at = eventValue(event, 'at');
-  const timestamp = Date.parse(at);
-  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function eventValue(event: GraphEvent, key: string) {
