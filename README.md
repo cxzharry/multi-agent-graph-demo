@@ -39,10 +39,17 @@ bearer token. Read endpoints remain local and read-only.
 
 The server exposes:
 
+- `GET /api/health`
 - `POST /api/snapshots`
 - `GET /api/graphs`
 - `GET /api/snapshot?scopeId=...&runId=...`
 - `GET /api/stream?scopeId=...&runId=...`
+
+`GET /api/health` identifies this viewer exactly:
+
+```json
+{"service":"herdr-role-graph-viewer","schemaVersion":"role-graph/v1"}
+```
 
 Example:
 

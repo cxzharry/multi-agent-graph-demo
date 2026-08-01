@@ -20,6 +20,12 @@ npm run server
 The viewer listens at `http://127.0.0.1:4173` and persists snapshots to
 `data/snapshots.jsonl` unless `ROLE_GRAPH_DATA_FILE` is set.
 
+The readiness identity is `GET /api/health`, which returns exactly:
+
+```json
+{"service":"herdr-role-graph-viewer","schemaVersion":"role-graph/v1"}
+```
+
 For an isolated local data file:
 
 ```bash
