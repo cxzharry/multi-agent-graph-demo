@@ -77,6 +77,33 @@
       "status": "failed",
       "task": "Verify live update behavior",
       "generation": 1
+    },
+    {
+      "id": "visual-qc",
+      "role": "Visual QC",
+      "assignee": "P8",
+      "layer": 5,
+      "status": "pending",
+      "task": "Inspect layout and readability",
+      "generation": 1
+    },
+    {
+      "id": "persona-qc",
+      "role": "Persona QC",
+      "assignee": "P9",
+      "layer": 5,
+      "status": "pending",
+      "task": "Check the operator experience",
+      "generation": 1
+    },
+    {
+      "id": "delivery",
+      "role": "Delivery",
+      "assignee": "P5",
+      "layer": 6,
+      "status": "pending",
+      "task": "Publish the accepted result",
+      "generation": 1
     }
   ],
   "edges": [
@@ -142,6 +169,41 @@
       "target": "functional-qc",
       "kind": "forward",
       "status": "failed"
+    },
+    {
+      "id": "functional-to-visual-qc",
+      "source": "functional-qc",
+      "target": "visual-qc",
+      "kind": "forward",
+      "status": "pending"
+    },
+    {
+      "id": "functional-to-persona-qc",
+      "source": "functional-qc",
+      "target": "persona-qc",
+      "kind": "forward",
+      "status": "pending"
+    },
+    {
+      "id": "functional-to-delivery",
+      "source": "functional-qc",
+      "target": "delivery",
+      "kind": "forward",
+      "status": "blocked"
+    },
+    {
+      "id": "visual-to-delivery",
+      "source": "visual-qc",
+      "target": "delivery",
+      "kind": "forward",
+      "status": "pending"
+    },
+    {
+      "id": "persona-to-delivery",
+      "source": "persona-qc",
+      "target": "delivery",
+      "kind": "forward",
+      "status": "pending"
     }
   ],
   "failurePolicies": [

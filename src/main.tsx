@@ -1,4 +1,4 @@
-import {useMemo} from 'react';
+import {useEffect, useMemo} from 'react';
 import {createRoot} from 'react-dom/client';
 import {
   Background,
@@ -6,6 +6,8 @@ import {
   MarkerType,
   ReactFlow,
   type Edge,
+  type FitViewOptions,
+  useUpdateNodeInternals,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -25,6 +27,16 @@ import './style.css';
 
 const nodeTypes = {role: RoleNode};
 const edgeTypes = {feedback: FeedbackEdge};
+
+function SyncNodeInternals({nodes}: {nodes: RoleFlowNode[]}) {
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  useEffect(
+    () => updateNodeInternals(nodes.map(node => node.id)),
+    [nodes, updateNodeInternals],
+  );
+  return null;
+}
 
 function App() {
   const {
@@ -53,6 +65,22 @@ function App() {
       })),
     [layout.positionedNodes],
   );
+  const initialFitView = useMemo<FitViewOptions<RoleFlowNode>>(() => {
+    const rows = [...new Set(nodes.map(node => node.position.y))].sort(
+      (left, right) => left - right,
+    );
+    if (rows.length <= 4) return {padding: 0.24, maxZoom: 1.05};
+
+    const topRows = new Set(rows.slice(0, 2));
+    return {
+      nodes: nodes
+        .filter(node => topRows.has(node.position.y))
+        .map(node => ({id: node.id})),
+      padding: 0.08,
+      minZoom: 0.9,
+      maxZoom: 1.05,
+    };
+  }, [nodes]);
   const edges = useMemo<Edge[]>(() => {
     const forwardEdges: Edge[] = layout.forwardEdges.map(edge => ({
       id: edge.id,
@@ -158,7 +186,7 @@ function App() {
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 fitView
-                fitViewOptions={{padding: 0.24, maxZoom: 1.05}}
+                fitViewOptions={initialFitView}
                 minZoom={0.2}
                 maxZoom={1.5}
                 nodesDraggable={false}
@@ -166,6 +194,7 @@ function App() {
                 elementsSelectable={false}
                 proOptions={{hideAttribution: true}}
               >
+                <SyncNodeInternals nodes={nodes} />
                 <Background color="#27303c" gap={28} size={1} />
                 <Controls showInteractive={false} />
               </ReactFlow>

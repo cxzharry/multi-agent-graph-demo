@@ -69,6 +69,45 @@ async function nodeBox(page, nodeId) {
   return box;
 }
 
+async function viewportReadability(page, nodeId) {
+  return page.evaluate(id => {
+    const viewport = document.querySelector('.react-flow__viewport');
+    const node = document.querySelector(`[data-node-id="${id}"]`);
+    assertElement(viewport, 'React Flow viewport');
+    assertElement(node, `role node ${id}`);
+
+    const transform = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+    const scale = Math.abs(transform.a);
+    const roleTitle = node.querySelector('h3');
+    const task = node.querySelector('.role-task');
+    const status = node.querySelector('.role-status');
+    assertElement(roleTitle, 'role title');
+    assertElement(task, 'role task');
+    assertElement(status, 'role status');
+
+    return {
+      scale,
+      roleTitle: Number.parseFloat(getComputedStyle(roleTitle).fontSize) * scale,
+      task: Number.parseFloat(getComputedStyle(task).fontSize) * scale,
+      status: Number.parseFloat(getComputedStyle(status).fontSize) * scale,
+    };
+
+    function assertElement(value, label) {
+      if (!(value instanceof Element)) throw new Error(`Missing ${label}`);
+    }
+  }, nodeId);
+}
+
+function assertInside(inner, outer, label) {
+  assert.ok(
+    inner.x >= outer.x &&
+      inner.y >= outer.y &&
+      inner.x + inner.width <= outer.x + outer.width &&
+      inner.y + inner.height <= outer.y + outer.height,
+    `${label} must be visible in the initial graph viewport`,
+  );
+}
+
 const temporaryDirectory = await mkdtemp(
   path.join(os.tmpdir(), 'role-graph-browser-smoke-'),
 );
@@ -135,6 +174,11 @@ try {
   );
   await waitForNodeCount(page, compact.nodes.length);
   assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 0);
+  const compactPanel = await page.locator('.graph-panel').boundingBox();
+  assert.ok(compactPanel);
+  for (const node of compact.nodes) {
+    assertInside(await nodeBox(page, node.id), compactPanel, `Compact ${node.role}`);
+  }
 
   await page.reload();
   await waitForNodeCount(page, compact.nodes.length);
@@ -146,6 +190,27 @@ try {
     }).toString(),
   );
   await waitForNodeCount(page, branched.nodes.length);
+  await page.evaluate(
+    () =>
+      new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+
+  const readability = await viewportReadability(page, 'orchestration');
+  console.log(`Initial 11-role React Flow scale: ${readability.scale.toFixed(3)}`);
+  assert.ok(
+    readability.roleTitle >= 12,
+    `Role title effective size ${readability.roleTitle.toFixed(2)}px is below 12px`,
+  );
+  assert.ok(
+    readability.task >= 10,
+    `Task effective size ${readability.task.toFixed(2)}px is below 10px`,
+  );
+  assert.ok(
+    readability.status >= 8,
+    `Status effective size ${readability.status.toFixed(2)}px is below 8px`,
+  );
 
   const implementationBoxes = await Promise.all([
     nodeBox(page, 'implementation-a'),
@@ -160,6 +225,12 @@ try {
   );
 
   const orchestratorBox = await nodeBox(page, 'orchestration');
+  const graphPanel = await page.locator('.graph-panel').boundingBox();
+  assert.ok(graphPanel);
+  assertInside(orchestratorBox, graphPanel, 'Orchestration role');
+  await page.locator('.failure-summary').waitFor();
+  assert.equal(await page.locator('.react-flow__controls-zoomin').count(), 1);
+  assert.equal(await page.locator('.react-flow__controls-zoomout').count(), 1);
   const otherBoxes = await Promise.all(
     branched.nodes
       .filter(node => node.id !== 'orchestration')
@@ -170,6 +241,24 @@ try {
     'The orchestration role must be above every downstream role',
   );
   assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 1);
+  const forwardPaths = await page
+    .locator('.forward-edge .react-flow__edge-path')
+    .evaluateAll(paths => paths.map(path => path.getAttribute('d') || ''));
+  assert.ok(forwardPaths.length > 0);
+  assert.ok(
+    forwardPaths.every(
+      path => !/[CQ]/.test(path) && (path.match(/L/g) || []).length === 1,
+    ),
+    'Every forward edge must remain a single straight segment',
+  );
+  const feedbackBox = await page
+    .locator('[data-testid="feedback-edge"]')
+    .boundingBox();
+  assert.ok(feedbackBox);
+  const rightmostNode = Math.max(
+    ...[...otherBoxes, orchestratorBox].map(box => box.x + box.width),
+  );
+  assert.ok(feedbackBox.x + feedbackBox.width > rightmostNode);
 
   const liveUpdate = structuredClone(branched);
   liveUpdate.sequence = 2;
