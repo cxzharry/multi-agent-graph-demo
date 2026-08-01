@@ -463,27 +463,44 @@ select {
   white-space: nowrap;
 }
 
-.role-node.status-running,
-.role-node.status-retrying {
+.role-node.status-running {
   border-color: #4d9a7a;
+  background: #17241f;
+  box-shadow:
+    0 12px 30px rgb(0 0 0 / 22%),
+    inset 0 0 0 1px rgb(100 200 155 / 10%);
 }
 
-.status-running .status-dot,
-.status-retrying .status-dot {
+.status-running .status-dot {
   background: #64c89b;
   box-shadow: 0 0 0 4px rgb(100 200 155 / 9%);
 }
 
+.role-node.status-retrying {
+  border-color: #a8733f;
+  background: #241d15;
+  box-shadow:
+    0 12px 30px rgb(0 0 0 / 22%),
+    inset 0 0 0 1px rgb(231 183 93 / 12%);
+}
+
+.status-retrying .status-dot {
+  background: #e7b75d;
+  box-shadow: 0 0 0 4px rgb(231 183 93 / 12%);
+}
+
 .role-node.status-passed {
-  border-color: #405c51;
+  border-color: #456278;
+  background: #151c23;
 }
 
 .status-passed .status-dot {
-  background: #6ca98f;
+  background: #8fa9c0;
 }
 
 .role-node.status-failed {
   border-color: #9b503f;
+  background: #241915;
 }
 
 .status-failed .status-dot {
@@ -493,11 +510,24 @@ select {
 .role-node.status-blocked,
 .role-node.status-stale {
   border-color: #6d5c3d;
+  background: #211e17;
 }
 
 .status-blocked .status-dot,
 .status-stale .status-dot {
   background: #d8a84f;
+}
+
+.role-node.status-pending,
+.role-node.status-skipped {
+  border-color: #2b333e;
+  background: #14181e;
+  color: #c7ced8;
+}
+
+.status-pending .status-dot,
+.status-skipped .status-dot {
+  background: #566170;
 }
 
 .role-handle {

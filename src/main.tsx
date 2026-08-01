@@ -120,7 +120,11 @@ function App() {
     selection &&
       !graphs.some(graph => graphMatchesSelection(graph, selection)),
   );
-  const timeline = snapshot ? [...snapshot.events].slice(-12).reverse() : [];
+  const timeline = snapshot
+    ? [...snapshot.events]
+        .sort((left, right) => eventTime(right) - eventTime(left))
+        .slice(0, 12)
+    : [];
 
   function handleGraphSelection(value: string) {
     const graph = graphs.find(item => selectionQuery(item) === value);
@@ -275,7 +279,7 @@ function TimelineItem({event}: {event: GraphEvent}) {
     eventValue(event, 'type') ||
     'Graph event';
   const node = eventValue(event, 'nodeId') || eventValue(event, 'node');
-  const timestamp = eventValue(event, 'timestamp');
+  const at = eventValue(event, 'at');
 
   return (
     <article className="timeline-item">
@@ -285,13 +289,19 @@ function TimelineItem({event}: {event: GraphEvent}) {
       <div>
         <p>{label}</p>
         <small>
-          {[node, timestamp && formatTimestamp(timestamp)]
+          {[node, at && formatTimestamp(at)]
             .filter(Boolean)
             .join(' · ')}
         </small>
       </div>
     </article>
   );
+}
+
+function eventTime(event: GraphEvent) {
+  const at = eventValue(event, 'at');
+  const timestamp = Date.parse(at);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function eventValue(event: GraphEvent, key: string) {

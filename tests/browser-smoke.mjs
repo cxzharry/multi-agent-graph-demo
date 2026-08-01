@@ -13,6 +13,10 @@ const screenshotPath = path.join(
   artifactsDirectory,
   'live-role-graph-browser-smoke.png',
 );
+const oldAtEventTime = '2026-07-31T10:04:08Z';
+const newAtEventTime = '2026-07-31T10:05:09Z';
+const oldAtEventLabel = formatSmokeTimestamp(oldAtEventTime);
+const newAtEventLabel = formatSmokeTimestamp(newAtEventTime);
 
 async function readFixture(name) {
   return JSON.parse(
@@ -98,6 +102,39 @@ async function viewportReadability(page, nodeId) {
   }, nodeId);
 }
 
+async function statusVisualState(page) {
+  return page.evaluate(() => {
+    const statusOrder = [
+      'running',
+      'retrying',
+      'passed',
+      'pending',
+      'failed',
+    ];
+    const state = {};
+    for (const status of statusOrder) {
+      const node = document.querySelector(`[data-status="${status}"]`);
+      assertElement(node, `${status} role node`);
+      const dot = node.querySelector('.status-dot');
+      assertElement(dot, `${status} status dot`);
+      const styles = getComputedStyle(node);
+      const dotStyles = getComputedStyle(dot);
+      state[status] = {
+        borderColor: styles.borderColor,
+        backgroundColor: styles.backgroundColor,
+        boxShadow: styles.boxShadow,
+        dotBackgroundColor: dotStyles.backgroundColor,
+        dotBoxShadow: dotStyles.boxShadow,
+      };
+    }
+    return state;
+
+    function assertElement(value, label) {
+      if (!(value instanceof Element)) throw new Error(`Missing ${label}`);
+    }
+  });
+}
+
 function assertInside(inner, outer, label) {
   assert.ok(
     inner.x >= outer.x &&
@@ -144,7 +181,24 @@ try {
   const compact = await readFixture('compact.json');
   const branched = await readFixture('branched-loop.json');
   await postSnapshot(baseUrl, compact);
-  await postSnapshot(baseUrl, branched);
+  const atTimelineSnapshot = structuredClone(branched);
+  atTimelineSnapshot.events = [
+    {
+      id: 'old-at-event',
+      at: oldAtEventTime,
+      nodeId: 'implementation-a',
+      type: 'lane_done',
+      message: 'Older at event',
+    },
+    {
+      id: 'new-at-event',
+      at: newAtEventTime,
+      nodeId: 'correction-owner',
+      type: 'retry',
+      message: 'Newest at event',
+    },
+  ];
+  await postSnapshot(baseUrl, atTimelineSnapshot);
 
   const missingSelection = {
     scopeId: 'portfolio:missing',
@@ -241,6 +295,59 @@ try {
     'The orchestration role must be above every downstream role',
   );
   assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 1);
+  const firstTimelineItem = page.locator('.timeline-item').first();
+  await expectTimelineText(firstTimelineItem, 'Newest at event');
+  await expectTimelineText(firstTimelineItem, newAtEventLabel);
+  await expectTimelineText(page.locator('.timeline-item').nth(1), 'Older at event');
+  await expectTimelineText(page.locator('.timeline-item').nth(1), oldAtEventLabel);
+  const timelineMessages = await page
+    .locator('.timeline-item p')
+    .evaluateAll(items => items.map(item => item.textContent?.trim()));
+  assert.deepEqual(timelineMessages.slice(0, 2), [
+    'Newest at event',
+    'Older at event',
+  ]);
+  const statusStyles = await statusVisualState(page);
+  assert.notEqual(
+    statusStyles.passed.borderColor,
+    statusStyles.running.borderColor,
+    'Passed nodes must not use active running border color',
+  );
+  assert.notEqual(
+    statusStyles.passed.dotBackgroundColor,
+    statusStyles.running.dotBackgroundColor,
+    'Passed nodes must not use active running dot color',
+  );
+  assert.notEqual(
+    statusStyles.retrying.dotBackgroundColor,
+    statusStyles.running.dotBackgroundColor,
+    'Retrying and running nodes must remain visually distinct',
+  );
+  assert.notEqual(
+    statusStyles.running.dotBoxShadow,
+    'none',
+    'Running nodes must keep an active glow',
+  );
+  assert.notEqual(
+    statusStyles.retrying.dotBoxShadow,
+    'none',
+    'Retrying nodes must keep an active glow',
+  );
+  assert.equal(
+    statusStyles.passed.dotBoxShadow,
+    'none',
+    'Passed nodes must not use active glow',
+  );
+  assert.notEqual(
+    statusStyles.pending.backgroundColor,
+    statusStyles.running.backgroundColor,
+    'Pending nodes must look visually inactive',
+  );
+  assert.notEqual(
+    statusStyles.failed.borderColor,
+    statusStyles.running.borderColor,
+    'Failed nodes must not use active running border color',
+  );
   const forwardPaths = await page
     .locator('.forward-edge .react-flow__edge-path')
     .evaluateAll(paths => paths.map(path => path.getAttribute('d') || ''));
@@ -300,4 +407,16 @@ try {
     new Promise(resolve => setTimeout(resolve, 2000)),
   ]);
   await rm(temporaryDirectory, {recursive: true, force: true});
+}
+
+async function expectTimelineText(locator, text) {
+  await locator.getByText(text).waitFor();
+}
+
+function formatSmokeTimestamp(value) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(Date.parse(value));
 }
