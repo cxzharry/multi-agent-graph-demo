@@ -110,6 +110,16 @@ describe('role graph server', () => {
     expect(await response.json()).toEqual(snapshot());
   });
 
+  test('returns a stable viewer health identity', async () => {
+    const response = await fetch(`${baseUrl}/api/health`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      service: 'herdr-role-graph-viewer',
+      schemaVersion: 'role-graph/v1',
+    });
+  });
+
   test('returns 400 for an invalid snapshot', async () => {
     const input = snapshot();
     input.nodes[0].status = 'working';
