@@ -119,6 +119,17 @@ def _lane_node_id(prefix: str, lane_id: str) -> str:
     return f"{prefix}-{lane_id.encode('utf-8').hex()}"
 
 
+def _allocate_live_node_id(lane_id: str, used_ids: set[str]) -> str:
+    preferred = _lane_node_id("live", lane_id)
+    candidate = preferred
+    suffix = 2
+    while candidate in used_ids:
+        candidate = f"{preferred}-{suffix}"
+        suffix += 1
+    used_ids.add(candidate)
+    return candidate
+
+
 def synthesize_manifest(state: dict) -> dict:
     """Derive a deterministic operational manifest without writing it."""
     run_id = state.get("run", {}).get("contract_id")
@@ -178,6 +189,7 @@ def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, 
         if node.get("source", {}).get("type") == "slot"
         and node.get("source", {}).get("id") == "P1"
     ]
+    used_node_ids = {node["id"] for node in authored_nodes}
 
     for node in authored_nodes:
         source = node.get("source", {})
@@ -200,6 +212,7 @@ def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, 
             continue
         tip = member_to_tip[root]
         addition = _lane_definition(root, tip, lanes[tip], 1, "live")
+        addition["id"] = _allocate_live_node_id(root, used_node_ids)
         additions.append(addition)
         for member in root_to_members[root]:
             lane_nodes[member] = addition["id"]

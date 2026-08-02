@@ -436,6 +436,38 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertEqual(2, len({node["id"] for node in additions}))
         assert_protocol_valid(self, snapshot)
 
+    def test_live_addition_allocates_around_an_authored_node_id(self):
+        state = fixture_state()
+        state["lanes"]["late_task"] = {
+            "role": "Follow-up",
+            "slot": "P4",
+            "task_summary": "Handle late task",
+        }
+        manifest = fixture_manifest()
+        would_be_generated = "live-6c6174655f7461736b"
+        manifest["nodes"].append(
+            {
+                "id": would_be_generated,
+                "role": "Authored Observer",
+                "assignee": "P9",
+                "task": "Observe authored work",
+                "source": {"type": "slot", "id": "P9"},
+            }
+        )
+
+        first = build_snapshot(state, manifest, "wK")
+        second = build_snapshot(copy.deepcopy(state), manifest, "wK")
+        node_ids = [node["id"] for node in first["nodes"]]
+        addition = next(
+            node for node in first["nodes"] if node["role"] == "Follow-up"
+        )
+
+        self.assertEqual(first, second)
+        self.assertIn(would_be_generated, node_ids)
+        self.assertNotEqual(would_be_generated, addition["id"])
+        self.assertEqual(len(node_ids), len(set(node_ids)))
+        assert_protocol_valid(self, first)
+
 
 class PublishingTests(unittest.TestCase):
     def test_synthetic_mode_publishes_without_manifest_file(self):
