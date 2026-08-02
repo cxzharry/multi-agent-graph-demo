@@ -185,6 +185,7 @@ try {
   const generatedNodeId = `auto-${Buffer.from('publisher_projection').toString('hex')}`;
   const persona = {
     ...structuredClone(compact),
+    flowId: 'auto-operational',
     scopeId: 'persona:ui',
     runId: 'role-assignee-timestamps',
     generatedAt: recentIsoTime,
@@ -239,7 +240,29 @@ try {
       },
     ],
   };
+  const customPersona = {
+    ...structuredClone(persona),
+    flowId: 'authored-custom',
+    scopeId: 'persona:custom',
+    runId: 'authored-auto-id',
+    generatedAt: new Date(recentEpochMilliseconds - 1000).toISOString(),
+    title: 'Authored auto ID contract',
+    nodes: [
+      {
+        id: generatedNodeId,
+        role: 'Publisher',
+        assignee: 'P5',
+        layer: 0,
+        status: 'running',
+        task: 'Publisher Projection',
+        generation: 1,
+      },
+    ],
+    edges: [],
+    events: [],
+  };
   await postSnapshot(baseUrl, compact);
+  await postSnapshot(baseUrl, customPersona);
   await postSnapshot(baseUrl, persona);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
@@ -296,6 +319,25 @@ try {
 
   await page.reload();
   await waitForNodeCount(page, compact.nodes.length);
+
+  await selector.selectOption(
+    new URLSearchParams({
+      scopeId: customPersona.scopeId,
+      runId: customPersona.runId,
+    }).toString(),
+  );
+  await waitForNodeCount(page, customPersona.nodes.length);
+  const authoredAutoNode = page.locator(`[data-node-id="${generatedNodeId}"]`);
+  assert.equal(await authoredAutoNode.locator('.role-task').count(), 1);
+  assert.equal(await authoredAutoNode.locator('.role-id').count(), 1);
+  assert.equal(
+    await authoredAutoNode.locator('.role-task').textContent(),
+    'Publisher Projection',
+  );
+  assert.equal(
+    await authoredAutoNode.locator('.role-id').textContent(),
+    generatedNodeId,
+  );
 
   await selector.selectOption(
     new URLSearchParams({

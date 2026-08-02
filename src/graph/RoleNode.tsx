@@ -3,13 +3,14 @@ import {Handle, Position, type Node, type NodeProps} from '@xyflow/react';
 import type {RoleNode as RoleNodeData} from './types';
 
 export type RoleFlowNode = Node<
-  RoleNodeData & Record<string, unknown>,
+  RoleNodeData & {synthetic: boolean} & Record<string, unknown>,
   'role'
 >;
 
 export function RoleNode({data}: NodeProps<RoleFlowNode>) {
-  const generated = data.id.startsWith('auto-');
-  const showTask = !isGeneratedLaneLabel(data.id, data.task);
+  const generated = data.synthetic && data.id.startsWith('auto-');
+  const showTask =
+    !data.synthetic || !isGeneratedLaneLabel(data.id, data.task);
 
   return (
     <article

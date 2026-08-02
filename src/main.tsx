@@ -59,11 +59,14 @@ function App() {
         id: node.id,
         type: 'role',
         position: node.position,
-        data: {...node},
+        data: {
+          ...node,
+          synthetic: snapshot?.flowId === 'auto-operational',
+        },
         draggable: false,
         selectable: false,
       })),
-    [layout.positionedNodes],
+    [layout.positionedNodes, snapshot?.flowId],
   );
   const initialFitView = useMemo<FitViewOptions<RoleFlowNode>>(() => {
     const rows = [...new Set(nodes.map(node => node.position.y))].sort(

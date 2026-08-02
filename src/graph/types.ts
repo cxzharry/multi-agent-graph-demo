@@ -57,6 +57,7 @@ export type GraphEvent = Record<string, unknown>;
 
 export type RoleGraphSnapshot = {
   schemaVersion: 'role-graph/v1';
+  flowId?: string;
   scopeId: string;
   runId: string;
   sequence: number;
