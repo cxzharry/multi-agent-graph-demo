@@ -183,6 +183,8 @@ try {
   const recentIsoTime = new Date(recentEpochMilliseconds).toISOString();
   const recentClockLabel = formatSmokeTimestamp(recentEpochMilliseconds);
   const generatedNodeId = `auto-${Buffer.from('publisher_projection').toString('hex')}`;
+  const opaqueNodeId = 'publisher-runtime';
+  const opaqueNodeTask = 'Coordinate publisher runtime';
   const persona = {
     ...structuredClone(compact),
     flowId: 'auto-operational',
@@ -201,12 +203,12 @@ try {
         generation: 1,
       },
       {
-        id: 'authored-review',
+        id: opaqueNodeId,
         role: 'Review',
         assignee: 'P5',
         layer: 1,
         status: 'pending',
-        task: 'Check authored decision quality',
+        task: opaqueNodeTask,
         generation: 1,
       },
     ],
@@ -214,7 +216,7 @@ try {
       {
         id: 'publisher-to-review',
         source: generatedNodeId,
-        target: 'authored-review',
+        target: opaqueNodeId,
         kind: 'forward',
         status: 'active',
       },
@@ -229,13 +231,13 @@ try {
       {
         id: 'epoch-milliseconds-event',
         at: recentEpochMilliseconds,
-        nodeId: 'authored-review',
+        nodeId: opaqueNodeId,
         message: 'Epoch milliseconds event',
       },
       {
         id: 'iso-event',
         at: recentIsoTime,
-        nodeId: 'authored-review',
+        nodeId: opaqueNodeId,
         message: 'ISO event',
       },
     ],
@@ -255,6 +257,15 @@ try {
         layer: 0,
         status: 'running',
         task: 'Publisher Projection',
+        generation: 1,
+      },
+      {
+        id: opaqueNodeId,
+        role: 'Review',
+        assignee: 'P5',
+        layer: 1,
+        status: 'pending',
+        task: opaqueNodeTask,
         generation: 1,
       },
     ],
@@ -338,6 +349,15 @@ try {
     await authoredAutoNode.locator('.role-id').textContent(),
     generatedNodeId,
   );
+  const authoredOpaqueNode = page.locator(`[data-node-id="${opaqueNodeId}"]`);
+  assert.equal(
+    await authoredOpaqueNode.locator('.role-task').textContent(),
+    opaqueNodeTask,
+  );
+  assert.equal(
+    await authoredOpaqueNode.locator('.role-id').textContent(),
+    opaqueNodeId,
+  );
 
   await selector.selectOption(
     new URLSearchParams({
@@ -347,21 +367,21 @@ try {
   );
   await waitForNodeCount(page, persona.nodes.length);
   const generatedNode = page.locator(`[data-node-id="${generatedNodeId}"]`);
-  const authoredNode = page.locator('[data-node-id="authored-review"]');
+  const opaqueNode = page.locator(`[data-node-id="${opaqueNodeId}"]`);
   assert.equal(await generatedNode.locator('h3').textContent(), 'Publisher');
-  assert.equal(await authoredNode.locator('h3').textContent(), 'Review');
+  assert.equal(await opaqueNode.locator('h3').textContent(), 'Review');
   assert.equal(await generatedNode.locator('.assignee-chip').textContent(), 'P5');
-  assert.equal(await authoredNode.locator('.assignee-chip').textContent(), 'P5');
+  assert.equal(await opaqueNode.locator('.assignee-chip').textContent(), 'P5');
   assert.equal(await generatedNode.locator('.role-task').count(), 0);
   assert.equal(await generatedNode.locator('.role-id').count(), 0);
-  assert.equal(
-    await authoredNode.locator('.role-task').textContent(),
-    'Check authored decision quality',
-  );
-  assert.equal(await authoredNode.locator('.role-id').textContent(), 'authored-review');
+  assert.equal(await opaqueNode.locator('.role-task').count(), 0);
+  assert.equal(await opaqueNode.locator('.role-id').count(), 0);
   const generatedNodeText = await generatedNode.innerText();
   assert.ok(!generatedNodeText.includes(generatedNodeId));
   assert.ok(!generatedNodeText.includes('Publisher Projection'));
+  const opaqueNodeText = await opaqueNode.innerText();
+  assert.ok(!opaqueNodeText.includes(opaqueNodeId));
+  assert.ok(!opaqueNodeText.includes(opaqueNodeTask));
   const personaText = await page.locator('.viewer-layout').innerText();
   assert.ok(!personaText.includes(String(recentEpochSeconds)));
   assert.ok(!personaText.includes(String(recentEpochMilliseconds)));
