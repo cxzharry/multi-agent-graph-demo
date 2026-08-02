@@ -36,6 +36,11 @@ class SelectedState(NamedTuple):
     run_id: str
 
 
+class ManifestSelection(NamedTuple):
+    mode: str
+    path: Path | None
+
+
 def _load_state(path: Path, workspace_id: str) -> SelectedState:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -160,30 +165,76 @@ def _argv_value(argv: list[str], flag: str) -> str | None:
     return argv[next_index]
 
 
-def publisher_matches(
-    process_info: dict[str, Any],
-    state_path: str,
-    manifest_path: str,
-    workspace_id: str,
-    endpoint: str,
-    watch: bool,
-) -> bool:
+def _publisher_argvs(process_info: dict[str, Any]) -> Iterator[list[str]]:
     for process in process_info.get("foreground_processes", []):
         command = process.get("cmdline", "")
         if not isinstance(command, str):
             continue
         try:
-            argv = shlex.split(command)
+            yield shlex.split(command)
         except ValueError:
             continue
-        if (
-            any(item.endswith("adapters/herdr/publisher.py") for item in argv)
-            and _argv_value(argv, "--state") == state_path
-            and _argv_value(argv, "--manifest") == manifest_path
-            and _argv_value(argv, "--workspace-id") == workspace_id
-            and _argv_value(argv, "--endpoint") == endpoint
-            and ("--watch" in argv) is watch
+
+
+def _publisher_common_matches(
+    argv: list[str],
+    state_path: str,
+    workspace_id: str,
+    endpoint: str,
+    watch: bool,
+) -> bool:
+    return (
+        any(item.endswith("adapters/herdr/publisher.py") for item in argv)
+        and _argv_value(argv, "--state") == state_path
+        and _argv_value(argv, "--workspace-id") == workspace_id
+        and _argv_value(argv, "--endpoint") == endpoint
+        and ("--watch" in argv) is watch
+    )
+
+
+def publisher_matches(
+    process_info: dict[str, Any],
+    state_path: str,
+    selection: ManifestSelection,
+    workspace_id: str,
+    endpoint: str,
+    watch: bool,
+) -> bool:
+    for argv in _publisher_argvs(process_info):
+        if not _publisher_common_matches(
+            argv, state_path, workspace_id, endpoint, watch
         ):
+            continue
+        manifest_path = _argv_value(argv, "--manifest")
+        synthetic = "--synthesize" in argv
+        if selection.mode == "synthetic" and synthetic and manifest_path is None:
+            return True
+        if (
+            selection.mode == "custom"
+            and selection.path is not None
+            and not synthetic
+            and manifest_path == str(selection.path)
+        ):
+            return True
+    return False
+
+
+def _publisher_matches_state(
+    process_info: dict[str, Any],
+    state_path: str,
+    workspace_id: str,
+    endpoint: str,
+    watch: bool,
+) -> bool:
+    for argv in _publisher_argvs(process_info):
+        if not _publisher_common_matches(
+            argv, state_path, workspace_id, endpoint, watch
+        ):
+            continue
+        mode_count = int("--synthesize" in argv) + int(
+            _argv_value(argv, "--manifest") is not None
+        )
+        if mode_count == 1:
             return True
     return False
 
@@ -214,16 +265,23 @@ def _result_value(response: dict[str, Any], key: str) -> Any:
     return response.get("result", {}).get(key)
 
 
-def _split_pane(anchor_pane: str, cwd: Path, label: str) -> str:
+def _split_pane(
+    anchor_pane: str,
+    cwd: Path,
+    label: str,
+    *,
+    direction: str,
+    ratio: str,
+) -> str:
     response = _herdr(
         "pane",
         "split",
         "--pane",
         anchor_pane,
         "--direction",
-        "down",
+        direction,
         "--ratio",
-        "0.25",
+        ratio,
         "--cwd",
         str(cwd),
         "--no-focus",
@@ -292,7 +350,10 @@ def _workspace_panes(workspace_id: str) -> list[dict[str, Any]]:
 
 
 def _find_publisher(
-    workspace_id: str, state_path: Path, manifest_path: Path, endpoint: str
+    workspace_id: str,
+    state_path: Path,
+    selection: ManifestSelection,
+    endpoint: str,
 ) -> str | None:
     for _ in range(2):
         stale_seen = False
@@ -313,7 +374,7 @@ def _find_publisher(
             if publisher_matches(
                 info,
                 str(state_path),
-                str(manifest_path),
+                selection,
                 workspace_id,
                 endpoint,
                 True,
@@ -324,34 +385,50 @@ def _find_publisher(
     return None
 
 
+def _find_publisher_for_state(
+    workspace_id: str, state_path: Path, endpoint: str
+) -> str | None:
+    for pane in _workspace_panes(workspace_id):
+        pane_id = pane.get("pane_id")
+        if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
+            continue
+        try:
+            response = _herdr("pane", "process-info", "--pane", pane_id)
+        except LauncherError as error:
+            if error.code in {"herdr_error", "herdr_timeout"}:
+                continue
+            raise
+        info = _result_value(response, "process_info") or {}
+        if isinstance(info, dict) and _publisher_matches_state(
+            info, str(state_path), workspace_id, endpoint, True
+        ):
+            return pane_id
+    return None
+
+
 def _resolve_manifest(
-    selected: SelectedState, repo: Path, explicit: Path | None
-) -> Path:
+    selected: SelectedState, explicit: Path | None
+) -> ManifestSelection:
     if explicit is not None:
         manifest = explicit.expanduser().resolve()
     else:
         configured = selected.value.get("run", {}).get("role_graph_manifest")
         if isinstance(configured, str) and configured:
             candidate = Path(configured).expanduser()
-            manifest = (selected.path.parent / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+            manifest = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (selected.path.parent / candidate).resolve()
+            )
         else:
             run_manifest = selected.path.parent / "role-graph-manifest.json"
             if run_manifest.exists():
                 manifest = run_manifest.resolve()
             else:
-                raise LauncherError(
-                    "missing_manifest",
-                    (
-                        "No role graph manifest selected; pass explicit --manifest, "
-                        "set run.role_graph_manifest, or create run-local "
-                        "role-graph-manifest.json"
-                    ),
-                    state=str(selected.path),
-                    run_id=selected.run_id,
-                )
+                return ManifestSelection("synthetic", None)
     if not manifest.is_file():
         raise LauncherError("missing_manifest", f"Manifest not found: {manifest}")
-    return manifest
+    return ManifestSelection("custom", manifest)
 
 
 @contextmanager
@@ -387,7 +464,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             current_pane,
             explicit=args.state,
         )
-        manifest = _resolve_manifest(selected, repo, args.manifest)
+        selection = _resolve_manifest(selected, args.manifest)
         revision = selected.value.get("revision")
         if not isinstance(revision, int):
             raise LauncherError(
@@ -398,7 +475,13 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
         server_pane: str | None = None
 
         if not server_reused:
-            server_pane = _split_pane(current_pane, repo, "graph-viewer-server")
+            server_pane = _split_pane(
+                current_pane,
+                repo,
+                "graph-viewer-server",
+                direction="right",
+                ratio="0.32",
+            )
             data_file = (
                 args.runs_root.expanduser() / workspace_id / "viewer" / "snapshots.jsonl"
             )
@@ -419,23 +502,41 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             _wait_for_viewer(port)
 
         endpoint = f"http://127.0.0.1:{port}/api/snapshots"
-        publisher_pane = _find_publisher(workspace_id, selected.path, manifest, endpoint)
+        publisher_pane = _find_publisher(workspace_id, selected.path, selection, endpoint)
         publisher_reused = publisher_pane is not None
         if publisher_pane is None:
-            publisher_pane = _split_pane(current_pane, repo, "graph-viewer-publisher")
+            publisher_pane = _find_publisher_for_state(
+                workspace_id, selected.path, endpoint
+            )
+            if publisher_pane is not None:
+                _herdr("pane", "send-keys", publisher_pane, "ctrl+c")
+            else:
+                anchor_pane = server_pane or current_pane
+                publisher_pane = _split_pane(
+                    anchor_pane,
+                    repo,
+                    "graph-viewer-publisher",
+                    direction="down" if server_pane is not None else "right",
+                    ratio="0.5" if server_pane is not None else "0.32",
+                )
+            topology_args = (
+                ["--synthesize"]
+                if selection.mode == "synthetic"
+                else ["--manifest", str(selection.path)]
+            )
             command = " ".join(
-                [
+                shlex.quote(value)
+                for value in [
                     "python3",
                     "-B",
-                    shlex.quote(str(repo / "adapters/herdr/publisher.py")),
+                    str(repo / "adapters/herdr/publisher.py"),
                     "--state",
-                    shlex.quote(str(selected.path)),
-                    "--manifest",
-                    shlex.quote(str(manifest)),
+                    str(selected.path),
+                    *topology_args,
                     "--workspace-id",
-                    shlex.quote(workspace_id),
+                    workspace_id,
                     "--endpoint",
-                    shlex.quote(endpoint),
+                    endpoint,
                     "--watch",
                     "--interval",
                     "2",
@@ -449,7 +550,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
         "workspace_id": workspace_id,
         "run_id": selected.run_id,
         "state": str(selected.path),
-        "manifest": str(manifest),
+        "mode": selection.mode,
+        "manifest": str(selection.path) if selection.path is not None else None,
         "url": viewer_url(port, scope_id, selected.run_id),
         "sequence": snapshot.get("sequence"),
         "server": {"port": port, "pane_id": server_pane, "reused": server_reused},

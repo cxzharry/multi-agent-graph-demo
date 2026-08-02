@@ -149,36 +149,63 @@ class StartViewerTest(unittest.TestCase):
         }
 
         self.assertTrue(
-            launcher.publisher_matches(process, target, manifest, "w1", endpoint, True)
+            launcher.publisher_matches(
+                process,
+                target,
+                launcher.ManifestSelection("custom", Path(manifest)),
+                "w1",
+                endpoint,
+                True,
+            )
         )
         self.assertFalse(
             launcher.publisher_matches(
-                process, "/tmp/other/workspace-state.json", manifest, "w1", endpoint, True
+                process,
+                "/tmp/other/workspace-state.json",
+                launcher.ManifestSelection("custom", Path(manifest)),
+                "w1",
+                endpoint,
+                True,
             )
         )
 
-    def test_refuses_manifest_fallback_when_run_does_not_select_one(self):
+    def test_selects_synthetic_only_when_no_custom_source_exists(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            repo = root / "repo"
-            (repo / "adapters/herdr/manifests").mkdir(parents=True)
-            (repo / "adapters/herdr/manifests/standard.json").write_text("{}", encoding="utf-8")
             state = self.write_state(
                 root, "current", workspace="w1", pane="w1:p1", run_id="current-run"
             )
             selected = launcher._load_state(state, "w1")
 
-            with self.assertRaises(launcher.LauncherError) as raised:
-                launcher._resolve_manifest(selected, repo, None)
+            self.assertEqual(
+                launcher.ManifestSelection("synthetic", None),
+                launcher._resolve_manifest(selected, None),
+            )
 
-            self.assertEqual(raised.exception.code, "missing_manifest")
-            self.assertIn("explicit --manifest", str(raised.exception))
-
-    def test_resolves_manifest_from_state_or_run_local_file_only(self):
+    def test_configured_missing_manifest_fails_instead_of_synthesizing(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                role_graph_manifest=str(root / "missing.json"),
+            )
+
+            with self.assertRaises(launcher.LauncherError) as raised:
+                launcher._resolve_manifest(launcher._load_state(state, "w1"), None)
+            self.assertEqual(raised.exception.code, "missing_manifest")
+
+    def test_resolves_custom_manifest_by_exact_precedence(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            explicit_manifest = root / "explicit.json"
+            explicit_manifest.write_text("{}", encoding="utf-8")
             state_manifest = root / "manifest.json"
             state_manifest.write_text("{}", encoding="utf-8")
             state = self.write_state(
@@ -192,8 +219,12 @@ class StartViewerTest(unittest.TestCase):
             selected = launcher._load_state(state, "w1")
 
             self.assertEqual(
-                launcher._resolve_manifest(selected, root / "repo", None),
-                state_manifest.resolve(),
+                launcher.ManifestSelection("custom", explicit_manifest.resolve()),
+                launcher._resolve_manifest(selected, explicit_manifest),
+            )
+            self.assertEqual(
+                launcher.ManifestSelection("custom", state_manifest.resolve()),
+                launcher._resolve_manifest(selected, None),
             )
 
             no_manifest_state = self.write_state(
@@ -204,8 +235,29 @@ class StartViewerTest(unittest.TestCase):
             selected = launcher._load_state(no_manifest_state, "w1")
 
             self.assertEqual(
-                launcher._resolve_manifest(selected, root / "repo", None),
-                run_local.resolve(),
+                launcher.ManifestSelection("custom", run_local.resolve()),
+                launcher._resolve_manifest(selected, None),
+            )
+
+    def test_resolves_relative_configured_manifest_from_run_directory(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                role_graph_manifest="graphs/custom.json",
+            )
+            manifest = state.parent / "graphs/custom.json"
+            manifest.parent.mkdir()
+            manifest.write_text("{}", encoding="utf-8")
+
+            self.assertEqual(
+                launcher.ManifestSelection("custom", manifest.resolve()),
+                launcher._resolve_manifest(launcher._load_state(state, "w1"), None),
             )
 
     def test_publisher_match_requires_exact_argv_values(self):
@@ -222,13 +274,20 @@ class StartViewerTest(unittest.TestCase):
         process = {"foreground_processes": [{"cmdline": exact}]}
 
         self.assertTrue(
-            launcher.publisher_matches(process, target, manifest, workspace, endpoint, True)
+            launcher.publisher_matches(
+                process,
+                target,
+                launcher.ManifestSelection("custom", Path(manifest)),
+                workspace,
+                endpoint,
+                True,
+            )
         )
         self.assertFalse(
             launcher.publisher_matches(
                 process,
                 "/tmp/current/workspace-state.json.bak",
-                manifest,
+                launcher.ManifestSelection("custom", Path(manifest)),
                 workspace,
                 endpoint,
                 True,
@@ -238,7 +297,7 @@ class StartViewerTest(unittest.TestCase):
             launcher.publisher_matches(
                 process,
                 target,
-                manifest,
+                launcher.ManifestSelection("custom", Path(manifest)),
                 "w10",
                 endpoint,
                 True,
@@ -248,9 +307,46 @@ class StartViewerTest(unittest.TestCase):
             launcher.publisher_matches(
                 process,
                 target,
-                manifest,
+                launcher.ManifestSelection("custom", Path(manifest)),
                 workspace,
                 endpoint + "/other",
+                True,
+            )
+        )
+
+    def test_publisher_match_requires_exact_topology_mode(self):
+        launcher = self.require_launcher()
+        target = "/tmp/current/workspace-state.json"
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        process = {
+            "foreground_processes": [
+                {
+                    "cmdline": (
+                        "python3 -B adapters/herdr/publisher.py "
+                        f"--state {target} --synthesize --workspace-id w1 "
+                        f"--endpoint {endpoint} --watch"
+                    )
+                }
+            ]
+        }
+
+        self.assertTrue(
+            launcher.publisher_matches(
+                process,
+                target,
+                launcher.ManifestSelection("synthetic", None),
+                "w1",
+                endpoint,
+                True,
+            )
+        )
+        self.assertFalse(
+            launcher.publisher_matches(
+                process,
+                target,
+                launcher.ManifestSelection("custom", Path("/tmp/manifest.json")),
+                "w1",
+                endpoint,
                 True,
             )
         )
@@ -347,11 +443,143 @@ class StartViewerTest(unittest.TestCase):
 
         with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
             self.assertEqual(
-                launcher._find_publisher("w1", Path(target), Path(manifest), endpoint),
+                launcher._find_publisher(
+                    "w1",
+                    Path(target),
+                    launcher.ManifestSelection("custom", Path(manifest)),
+                    endpoint,
+                ),
                 "publisher",
             )
 
         self.assertIn(("pane", "process-info", "--pane", "stale"), calls)
+
+    def test_mode_switch_replaces_publisher_in_same_ordinary_pane(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            manifest = root / "role-graph-manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                revision=8,
+                role_graph_manifest=str(manifest),
+            )
+            endpoint = "http://127.0.0.1:4173/api/snapshots"
+            old_command = (
+                "python3 -B adapters/herdr/publisher.py "
+                f"--state {state.resolve()} --synthesize --workspace-id w1 "
+                f"--endpoint {endpoint} --watch --interval 2"
+            )
+            calls: list[tuple[str, ...]] = []
+
+            def fake_herdr(*args):
+                calls.append(args)
+                if args[:2] == ("pane", "list"):
+                    return {
+                        "result": {
+                            "panes": [
+                                {"pane_id": "publisher", "agent_status": "unknown"}
+                            ]
+                        }
+                    }
+                if args[:2] == ("pane", "process-info"):
+                    return {
+                        "result": {
+                            "process_info": {
+                                "foreground_processes": [{"cmdline": old_command}]
+                            }
+                        }
+                    }
+                if args[:2] in {("pane", "send-keys"), ("pane", "run")}:
+                    return {"result": {}}
+                raise AssertionError(args)
+
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
+                launcher, "probe_viewer", return_value="viewer"
+            ), mock.patch.object(
+                launcher,
+                "_snapshot",
+                return_value={
+                    "scopeId": "herdr:w1",
+                    "runId": "current-run",
+                    "sequence": 8,
+                },
+            ):
+                result = launcher.launch(args)
+
+            self.assertIn(("pane", "send-keys", "publisher", "ctrl+c"), calls)
+            replacement = [call for call in calls if call[:2] == ("pane", "run")]
+            self.assertEqual(len(replacement), 1)
+            self.assertEqual(replacement[0][2], "publisher")
+            self.assertIn("--manifest " + str(manifest.resolve()), replacement[0][3])
+            self.assertFalse(any(call[:2] == ("pane", "split") for call in calls))
+            self.assertFalse(result["publisher"]["reused"])
+
+    def test_mode_replacement_ignores_agent_panes(self):
+        launcher = self.require_launcher()
+        target = Path("/tmp/current/workspace-state.json")
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        command = (
+            "python3 -B adapters/herdr/publisher.py "
+            f"--state {target} --synthesize --workspace-id w1 "
+            f"--endpoint {endpoint} --watch"
+        )
+        calls: list[tuple[str, ...]] = []
+
+        def fake_herdr(*args):
+            calls.append(args)
+            if args[:2] == ("pane", "list"):
+                return {
+                    "result": {
+                        "panes": [
+                            {"pane_id": "agent-pane", "agent": "codex"},
+                            {"pane_id": "publisher-pane", "agent_status": "unknown"},
+                        ]
+                    }
+                }
+            if args[:2] == ("pane", "process-info"):
+                return {
+                    "result": {
+                        "process_info": {
+                            "foreground_processes": [{"cmdline": command}]
+                        }
+                    }
+                }
+            raise AssertionError(args)
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            found = launcher._find_publisher_for_state("w1", target, endpoint)
+
+        self.assertEqual(found, "publisher-pane")
+        self.assertNotIn(
+            ("pane", "process-info", "--pane", "agent-pane"), calls
+        )
 
     def test_herdr_uses_bounded_timeout(self):
         launcher = self.require_launcher()
@@ -385,14 +613,14 @@ class StartViewerTest(unittest.TestCase):
                 role_graph_manifest=str(manifest),
             )
             commands: dict[str, str] = {}
-            splits: list[str] = []
+            splits: list[tuple[str, ...]] = []
 
             def fake_herdr(*args):
                 if args[:2] == ("pane", "list"):
                     return {"result": {"panes": []}}
                 if args[:2] == ("pane", "split"):
                     pane_id = f"pane-{len(splits) + 1}"
-                    splits.append(pane_id)
+                    splits.append(args)
                     return {"result": {"pane": {"pane_id": pane_id}}}
                 if args[:2] == ("pane", "rename"):
                     return {"result": {}}
@@ -428,8 +656,39 @@ class StartViewerTest(unittest.TestCase):
                 result = launcher.launch(args)
 
             self.assertEqual(result["status"], "ready")
+            self.assertEqual(result.get("mode"), "custom")
             self.assertEqual(result["sequence"], 8)
-            self.assertEqual(len(splits), 2)
+            self.assertEqual(
+                splits,
+                [
+                    (
+                        "pane",
+                        "split",
+                        "--pane",
+                        "w1:p1",
+                        "--direction",
+                        "right",
+                        "--ratio",
+                        "0.32",
+                        "--cwd",
+                        str(repo.resolve()),
+                        "--no-focus",
+                    ),
+                    (
+                        "pane",
+                        "split",
+                        "--pane",
+                        "pane-1",
+                        "--direction",
+                        "down",
+                        "--ratio",
+                        "0.5",
+                        "--cwd",
+                        str(repo.resolve()),
+                        "--no-focus",
+                    ),
+                ],
+            )
             server_command = commands["pane-1"]
             self.assertIn("npm ci", server_command)
             self.assertIn("npm run build", server_command)
@@ -438,6 +697,152 @@ class StartViewerTest(unittest.TestCase):
             publisher_command = commands["pane-2"]
             self.assertIn("--manifest " + str(manifest.resolve()), publisher_command)
             self.assertIn("--workspace-id w1", publisher_command)
+
+    def test_manifestless_launch_emits_synthetic_mode_and_null_manifest(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                revision=8,
+            )
+            commands: list[str] = []
+
+            def fake_herdr(*args):
+                if args[:2] == ("pane", "list"):
+                    return {"result": {"panes": []}}
+                if args[:2] == ("pane", "split"):
+                    return {"result": {"pane": {"pane_id": "publisher"}}}
+                if args[:2] == ("pane", "rename"):
+                    return {"result": {}}
+                if args[:2] == ("pane", "run"):
+                    commands.append(args[3])
+                    return {"result": {}}
+                raise AssertionError(args)
+
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
+                launcher, "probe_viewer", return_value="viewer"
+            ), mock.patch.object(
+                launcher,
+                "_snapshot",
+                return_value={
+                    "scopeId": "herdr:w1",
+                    "runId": "current-run",
+                    "sequence": 8,
+                },
+            ):
+                result = launcher.launch(args)
+
+            self.assertEqual(result.get("mode"), "synthetic")
+            self.assertIsNone(result["manifest"])
+            self.assertEqual(len(commands), 1)
+            self.assertIn("--synthesize", commands[0])
+            self.assertNotIn("--manifest", commands[0])
+
+    def test_reused_server_splits_missing_publisher_right_of_p1(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            manifest = root / "role-graph-manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                revision=8,
+                role_graph_manifest=str(manifest),
+            )
+            splits: list[tuple[str, ...]] = []
+
+            def fake_herdr(*args):
+                if args[:2] == ("pane", "list"):
+                    return {"result": {"panes": []}}
+                if args[:2] == ("pane", "split"):
+                    splits.append(args)
+                    return {"result": {"pane": {"pane_id": "publisher"}}}
+                if args[:2] in {("pane", "rename"), ("pane", "run")}:
+                    return {"result": {}}
+                raise AssertionError(args)
+
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
+                launcher, "probe_viewer", return_value="viewer"
+            ), mock.patch.object(
+                launcher,
+                "_snapshot",
+                return_value={
+                    "scopeId": "herdr:w1",
+                    "runId": "current-run",
+                    "sequence": 8,
+                },
+            ):
+                launcher.launch(args)
+
+            self.assertEqual(
+                splits,
+                [
+                    (
+                        "pane",
+                        "split",
+                        "--pane",
+                        "w1:p1",
+                        "--direction",
+                        "right",
+                        "--ratio",
+                        "0.32",
+                        "--cwd",
+                        str(repo.resolve()),
+                        "--no-focus",
+                    )
+                ],
+            )
 
     def test_concurrent_launches_do_not_duplicate_processes(self):
         launcher = self.require_launcher()
