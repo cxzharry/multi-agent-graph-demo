@@ -133,9 +133,28 @@ describe('role graph server', () => {
   test('returns 409 for a stale sequence', async () => {
     expect((await post(baseUrl, snapshot())).status).toBe(202);
 
-    const response = await post(baseUrl, snapshot());
+    const equal = await post(baseUrl, snapshot());
+    const lower = await post(baseUrl, snapshot('scope-a', 'run-1', 0));
 
-    expect(response.status).toBe(409);
+    expect(equal.status).toBe(409);
+    expect(lower.status).toBe(409);
+  });
+
+  test('accepts explicit replacement only at the exact current sequence', async () => {
+    expect((await post(baseUrl, snapshot())).status).toBe(202);
+    const replacement = snapshot();
+    replacement.title = 'Explicit replacement';
+
+    const equal = await post(baseUrl, replacement, {
+      'x-role-graph-replace-current': 'true',
+    });
+    const lower = await post(baseUrl, snapshot('scope-a', 'run-1', 0), {
+      'x-role-graph-replace-current': 'true',
+    });
+
+    expect(equal.status).toBe(202);
+    expect(await equal.json()).toEqual(replacement);
+    expect(lower.status).toBe(409);
   });
 
   test('lists graphs and returns only the requested snapshot key', async () => {

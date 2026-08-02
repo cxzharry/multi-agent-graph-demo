@@ -11,6 +11,7 @@ from adapters.herdr.publisher import (
     PublisherError,
     _parser,
     build_snapshot,
+    main,
     publish_if_changed,
     publish_snapshot,
     synthesize_manifest,
@@ -504,6 +505,53 @@ class BuildSnapshotTests(unittest.TestCase):
 
 
 class PublishingTests(unittest.TestCase):
+    def test_posts_explicit_replacement_header_when_requested(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.status = 202
+
+        with mock.patch(
+            "adapters.herdr.publisher.urllib.request.urlopen",
+            return_value=response,
+        ) as urlopen:
+            publish_snapshot(
+                {"schemaVersion": "role-graph/v1"},
+                "http://127.0.0.1:4173/api/snapshots",
+                None,
+                replace_current=True,
+            )
+
+        request = urlopen.call_args.args[0]
+        headers = {key.lower(): value for key, value in request.header_items()}
+        self.assertEqual("true", headers["x-role-graph-replace-current"])
+
+    def test_cli_replace_current_marks_only_first_watch_post(self):
+        argv = [
+            "publisher.py",
+            "--state",
+            "state.json",
+            "--synthesize",
+            "--workspace-id",
+            "wK",
+            "--endpoint",
+            "http://127.0.0.1:4173/api/snapshots",
+            "--watch",
+            "--replace-current",
+        ]
+        with mock.patch("sys.argv", argv), mock.patch(
+            "adapters.herdr.publisher.publish_if_changed",
+            side_effect=[42, 43],
+        ) as publish, mock.patch(
+            "adapters.herdr.publisher.time.sleep",
+            side_effect=[None, KeyboardInterrupt],
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                main()
+
+        self.assertEqual(
+            [True, False],
+            [call.kwargs["replace_current"] for call in publish.call_args_list],
+        )
+
     def test_synthetic_mode_publishes_without_manifest_file(self):
         with tempfile.TemporaryDirectory() as directory:
             state_path = Path(directory) / "state.json"

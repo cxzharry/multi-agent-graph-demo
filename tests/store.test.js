@@ -76,6 +76,32 @@ describe('GraphStore', () => {
     await expect(
       store.append(snapshot('scope-a', 'run-1', 1, '2026-07-31T10:02:00Z')),
     ).rejects.toBeInstanceOf(StaleSequenceError);
+    await expect(
+      store.append(
+        snapshot('scope-a', 'run-1', 1, '2026-07-31T10:03:00Z'),
+        {replaceEqual: true},
+      ),
+    ).rejects.toBeInstanceOf(StaleSequenceError);
+  });
+
+  test('explicitly replaces only the exact current sequence', async () => {
+    const store = new GraphStore(dataFile);
+    await store.initialize();
+    await store.append(snapshot('scope-a', 'run-1', 2, '2026-07-31T10:00:00Z'));
+    const replacement = snapshot(
+      'scope-a',
+      'run-1',
+      2,
+      '2026-07-31T10:01:00Z',
+    );
+    replacement.title = 'Explicit replacement';
+
+    await store.append(replacement, {replaceEqual: true});
+
+    expect(store.getSnapshot('scope-a', 'run-1')).toEqual(replacement);
+    const restartedStore = new GraphStore(dataFile);
+    await restartedStore.initialize();
+    expect(restartedStore.getSnapshot('scope-a', 'run-1')).toEqual(replacement);
   });
 
   test('does not mix scopes that share a run ID', async () => {

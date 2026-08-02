@@ -40,20 +40,24 @@ export class GraphStore {
       const snapshot = validateSnapshot(JSON.parse(line));
       const key = graphKey(snapshot.scopeId, snapshot.runId);
       const current = this.latest.get(key);
-      if (!current || snapshot.sequence > current.sequence) {
+      if (!current || snapshot.sequence >= current.sequence) {
         this.latest.set(key, snapshot);
       }
     }
   }
 
-  async append(value) {
+  async append(value, {replaceEqual = false} = {}) {
     const snapshot = validateSnapshot(value);
     await this.initialize();
 
     const operation = this.writeQueue.then(async () => {
       const key = graphKey(snapshot.scopeId, snapshot.runId);
       const current = this.latest.get(key);
-      if (current && snapshot.sequence <= current.sequence) {
+      if (
+        current &&
+        (snapshot.sequence < current.sequence ||
+          (snapshot.sequence === current.sequence && !replaceEqual))
+      ) {
         throw new StaleSequenceError(
           snapshot.scopeId,
           snapshot.runId,

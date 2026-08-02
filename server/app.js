@@ -167,7 +167,11 @@ export function createApp({
         }
 
         const body = await readBody(request);
-        const snapshot = await store.append(JSON.parse(body || '{}'));
+        const replaceEqual =
+          request.headers['x-role-graph-replace-current'] === 'true';
+        const snapshot = await store.append(JSON.parse(body || '{}'), {
+          replaceEqual,
+        });
         broadcast(clients, snapshot);
         sendJson(response, 202, snapshot);
         return;

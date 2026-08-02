@@ -292,11 +292,19 @@ def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
     }
 
 
-def publish_snapshot(snapshot: dict, endpoint: str, token: str | None) -> None:
+def publish_snapshot(
+    snapshot: dict,
+    endpoint: str,
+    token: str | None,
+    *,
+    replace_current: bool = False,
+) -> None:
     """POST one immutable snapshot."""
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if replace_current:
+        headers["X-Role-Graph-Replace-Current"] = "true"
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(snapshot, separators=(",", ":")).encode("utf-8"),
@@ -319,6 +327,7 @@ def publish_if_changed(
     last_revision: int | None,
     *,
     synthesize: bool = False,
+    replace_current: bool = False,
 ) -> int:
     """Publish the supplied state only when its revision changes."""
     if synthesize == (manifest_path is not None):
@@ -334,7 +343,7 @@ def publish_if_changed(
 
     manifest = synthesize_manifest(state) if synthesize else _read_json(manifest_path)
     snapshot = build_snapshot(state, manifest, workspace_id)
-    publish_snapshot(snapshot, endpoint, token)
+    publish_snapshot(snapshot, endpoint, token, replace_current=replace_current)
     return snapshot["sequence"]
 
 
@@ -484,6 +493,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--token")
     parser.add_argument("--watch", action="store_true")
+    parser.add_argument("--replace-current", action="store_true")
     parser.add_argument("--interval", type=_positive_interval, default=1.0)
     return parser
 
@@ -491,6 +501,7 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _parser().parse_args()
     last_revision = None
+    replace_current = args.replace_current
     while True:
         try:
             revision = publish_if_changed(
@@ -501,7 +512,9 @@ def main() -> int:
                 args.token,
                 last_revision,
                 synthesize=args.synthesize,
+                replace_current=replace_current,
             )
+            replace_current = False
             if revision != last_revision:
                 print(json.dumps({"status": "published", "revision": revision}))
             last_revision = revision
