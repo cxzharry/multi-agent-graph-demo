@@ -7,17 +7,42 @@
   "target": 8,
   "target_min": 7,
   "max_iterations": 2,
-  "total_iterations": 1,
-  "best_iteration": 1,
-  "best_composite": 8.2,
+  "total_iterations": 2,
+  "best_iteration": 2,
+  "best_composite": 8.4,
   "composite_trajectory": [
     {
       "iter": 1,
-      "composite": 8.2
+      "composite": 7.8
+    },
+    {
+      "iter": 2,
+      "composite": 8.4
     }
   ],
-  "product_findings": [],
-  "product_corrections": [],
+  "final_scores": {
+    "manifestless_correctness": 8,
+    "projection_integrity": 9,
+    "isolation_and_readonly": 8,
+    "launcher_lifecycle": 8,
+    "backward_compatibility": 9
+  },
+  "product_findings": [
+    {
+      "iteration": 1,
+      "source": "P6",
+      "id": "p6-generated-control-edge-id-collision",
+      "criterion": "projection_integrity",
+      "status": "resolved_in_iteration_2"
+    }
+  ],
+  "product_corrections": [
+    {
+      "accepted_commit": "81aab03259bc4fdbd1c2e381e400810e72543289",
+      "integrated_commit": "2b90126bde97d5809dacc20e7666cd6c32a264a9",
+      "summary": "Allocate generated live control-edge IDs around authored edge IDs deterministically"
+    }
+  ],
   "frozen_baselines": {
     "compact_seconds": 152,
     "multi_module_seconds": 1009,
@@ -30,5 +55,5 @@
     "path": "trace.json",
     "note": "The user restricted all run artifacts to this plan directory, so the global trace store was not written."
   },
-  "completed_at_utc": "2026-08-02T07:10:56Z"
+  "completed_at_utc": "2026-08-02T07:29:15Z"
 }

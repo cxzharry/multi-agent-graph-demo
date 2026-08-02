@@ -1,0 +1,102 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 2,
+  "intent": "DELIVER",
+  "candidate_commit": "2b90126bde97d5809dacc20e7666cd6c32a264a9",
+  "candidate_tree": "585a0ec53b8a190a3839f66ee03baf3b75bb7550",
+  "passed": true,
+  "weighted_composite": 8.4,
+  "scores": {
+    "manifestless_correctness": {
+      "score": 8,
+      "evidence": "Synthetic selection, null-manifest launch, exact revision readiness, and manifestless publishing remain covered; publisher and launcher suites passed."
+    },
+    "projection_integrity": {
+      "score": 9,
+      "evidence": "The fix initializes generated edge allocation with every authored edge ID, uses deterministic numeric suffixes, and preserves authored edges. The new protocol-valid regression builds twice, asserts byte-equivalent snapshots, preserves the authored edge, requires a distinct generated ID, and asserts global edge-ID uniqueness."
+    },
+    "isolation_and_readonly": {
+      "score": 8,
+      "evidence": "Workspace rejection, AST read-only guards, immutable input handling, and agent-pane exclusion remain green in the full Python suites."
+    },
+    "launcher_lifecycle": {
+      "score": 8,
+      "evidence": "Exact mode reuse, same-pane replacement, right-side placement, locking, bounded calls, and duplicate prevention remain green across 30 launcher tests."
+    },
+    "backward_compatibility": {
+      "score": 9,
+      "evidence": "The node allocator retains its prior behavior through the shared allocator; all 29 publisher tests, 30 launcher tests, 35 Vitest tests, production build, and browser smoke passed. The new collision case passes the real shared role-graph protocol validator."
+    }
+  },
+  "criterion_evidence": {
+    "manifestless_correctness": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 29 passed",
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 30 passed"
+    ],
+    "projection_integrity": [
+      "test_live_control_edge_allocates_around_an_authored_edge_id",
+      "authored edge retained unchanged",
+      "generated edge ID differs and all edge IDs are unique",
+      "two repeated builds are equal"
+    ],
+    "isolation_and_readonly": [
+      "publisher AST/read-only guards passed",
+      "launcher foreign-workspace and agent-pane guards passed"
+    ],
+    "launcher_lifecycle": [
+      "launcher suite: 30 passed"
+    ],
+    "backward_compatibility": [
+      "assert_protocol_valid invokes shared/role-graph.js validateSnapshot",
+      "npm test -- --run: 35 passed",
+      "npm run build and node tests/browser-smoke.mjs: pass"
+    ]
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "29 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "30 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 35 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Browser smoke passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "fix_forward": {
+    "finding": "p6-generated-control-edge-id-collision",
+    "accepted_commit": "81aab03259bc4fdbd1c2e381e400810e72543289",
+    "accepted_tree": "6cd77ed490ef34d6a2ce8855080708a620a79d51",
+    "integrated_commit": "2b90126bde97d5809dacc20e7666cd6c32a264a9",
+    "integrated_tree": "585a0ec53b8a190a3839f66ee03baf3b75bb7550"
+  },
+  "environment_recovery": {
+    "classification": "environment",
+    "product_iteration_consumed": false,
+    "detail": "package.json and package-lock.json matched the source checkout byte-for-byte; its existing node_modules was exposed through a temporary symlink, no install ran, and the link was removed by trap."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

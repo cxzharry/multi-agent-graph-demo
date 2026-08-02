@@ -6,19 +6,22 @@
   "prior_scores": null,
   "scores": {
     "manifestless_correctness": 8,
-    "projection_integrity": 9,
+    "projection_integrity": 7,
     "isolation_and_readonly": 8,
     "launcher_lifecycle": 8,
     "backward_compatibility": 8
   },
-  "weighted_composite": 8.2,
-  "failure_class": null,
-  "targeted_criteria": [],
-  "hypothesis": "Confirmed: the accepted publisher and launcher histories compose without product correction",
+  "weighted_composite": 7.8,
+  "failure_class": "implementation",
+  "targeted_criteria": [
+    "projection_integrity"
+  ],
+  "hypothesis": "Generated live control-edge IDs are formed directly without reserving authored edge IDs, allowing a duplicate protocol ID",
   "what_not_to_retry": [
-    "Do not consume iteration 2 after SUCCESS",
+    "Do not replace or rename authored edge IDs",
+    "Do not special-case only one colliding ID; allocate deterministically from the complete used-ID set",
     "Do not rerun or modify frozen baselines",
     "Do not install, push, deliver, or operate panes"
   ],
-  "stop_condition": "SUCCESS"
+  "stop_condition": "CONTINUE"
 }

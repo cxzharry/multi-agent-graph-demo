@@ -1,50 +1,109 @@
 {
-  "id": "20260802-manifestless-viewer-integration-g1",
+  "id": "20260802-manifestless-viewer-integration-g2",
   "pipeline": "adversarial-dev",
   "orchestrator": "meta-harness",
   "meta_harness_used": true,
   "trace_kind": "run",
-  "generated": "2026-08-02T07:10:56Z",
+  "generated": "2026-08-02T07:29:15Z",
   "plan_dir": "plans/meta-harness-2026-08-02-manifestless-viewer",
   "plan_group_key": "meta-harness-2026-08-02-manifestless-viewer",
   "dedupe_key": "meta-harness-2026-08-02-manifestless-viewer",
   "feedback_sources": [
-    "feedback/iter-1.json"
+    "feedback/iter-1.json",
+    "feedback/iter-2.json"
   ],
   "sprints": {
-    "total": 1,
-    "iterations_observed": 1
+    "total": 2,
+    "iterations_observed": 2
   },
-  "retries": [],
+  "retries": [
+    {
+      "iter": 1,
+      "sprint": 1,
+      "skill": "p2_impl",
+      "executor": "p2_impl",
+      "learning_owner": "publisher_projection",
+      "learning_owner_confidence": "high",
+      "failure_domain": "graph_projection_identity",
+      "attribution_reason": "The generated edge allocator did not reserve authored edge IDs",
+      "exclude_from_crystallize": false,
+      "failure_class": "implementation",
+      "failure": "A generated live control edge could reuse an authored edge ID and violate protocol uniqueness",
+      "targeted_criteria": ["projection_integrity"],
+      "criterion_evidence": [
+        {
+          "iter": 1,
+          "score": 7,
+          "evidence": "P6 finding p6-generated-control-edge-id-collision",
+          "source_feedback": "feedback/iter-1.json"
+        }
+      ],
+      "what_not_to_retry": [
+        "Do not replace or rename authored edge IDs",
+        "Do not special-case one ID; allocate from the complete used-ID set"
+      ],
+      "learning_signal": {
+        "summary": "Generated control edges must allocate from authored plus generated edge IDs",
+        "evidence": "P6 reproduced duplicate edge IDs when an authored edge used the generated preferred ID",
+        "should_add_rule": "Publisher projection changes must reserve authored node and edge IDs before deterministic generated allocation",
+        "avoid": ["raw generated edge IDs without collision allocation"],
+        "confidence": "high"
+      },
+      "source_feedback": "feedback/iter-1.json"
+    }
+  ],
   "evaluator_scores": {
-    "manifestless_correctness": [8],
-    "projection_integrity": [9],
-    "isolation_and_readonly": [8],
-    "launcher_lifecycle": [8],
-    "backward_compatibility": [8]
+    "manifestless_correctness": [8, 8],
+    "projection_integrity": [7, 9],
+    "isolation_and_readonly": [8, 8],
+    "launcher_lifecycle": [8, 8],
+    "backward_compatibility": [8, 9]
   },
   "evaluator_scores_avg": {
     "manifestless_correctness": 8,
-    "projection_integrity": 9,
+    "projection_integrity": 8,
     "isolation_and_readonly": 8,
     "launcher_lifecycle": 8,
-    "backward_compatibility": 8
+    "backward_compatibility": 8.5
   },
   "criterion_evidence": {
-    "manifestless_correctness": ["feedback/iter-1.json"],
-    "projection_integrity": ["feedback/iter-1.json"],
-    "isolation_and_readonly": ["feedback/iter-1.json"],
-    "launcher_lifecycle": ["feedback/iter-1.json"],
-    "backward_compatibility": ["feedback/iter-1.json"]
+    "manifestless_correctness": ["feedback/iter-1.json", "feedback/iter-2.json"],
+    "projection_integrity": ["feedback/iter-1.json", "feedback/iter-2.json"],
+    "isolation_and_readonly": ["feedback/iter-1.json", "feedback/iter-2.json"],
+    "launcher_lifecycle": ["feedback/iter-1.json", "feedback/iter-2.json"],
+    "backward_compatibility": ["feedback/iter-1.json", "feedback/iter-2.json"]
   },
-  "owner_metrics": {},
+  "owner_metrics": {
+    "publisher_projection": {
+      "retry_count": 1,
+      "failure_domains": {
+        "graph_projection_identity": 1
+      },
+      "targeted_criteria": {
+        "projection_integrity": 1
+      },
+      "avg_targeted_score": 8,
+      "examples": [
+        {
+          "failure": "Generated live control-edge ID collided with an authored edge ID",
+          "source_feedback": "feedback/iter-1.json"
+        }
+      ],
+      "learning_signals": [
+        {
+          "summary": "Reserve authored edge IDs before generated allocation",
+          "confidence": "high"
+        }
+      ]
+    }
+  },
   "friction_summary": {
-    "highest_retry_skill": null,
-    "highest_retry_executor": null,
-    "highest_learning_owner": null,
+    "highest_retry_skill": "p2_impl",
+    "highest_retry_executor": "p2_impl",
+    "highest_learning_owner": "publisher_projection",
     "lowest_avg_criterion": "manifestless_correctness",
-    "total_retries": 0,
-    "crystallize_eligible_retries": 0,
+    "total_retries": 1,
+    "crystallize_eligible_retries": 1,
     "retry_failure_evidence_missing": 0,
     "unknown_learning_owner_count": 0,
     "exclude_from_crystallize": false,
@@ -57,8 +116,11 @@
   "outcome_detail": {
     "exit_code": "SUCCESS",
     "normalized_outcome": "success",
-    "best_iteration": 1,
-    "composite_trajectory": [{"iter": 1, "composite": 8.2}],
-    "total_iterations": 1
+    "best_iteration": 2,
+    "composite_trajectory": [
+      {"iter": 1, "composite": 7.8},
+      {"iter": 2, "composite": 8.4}
+    ],
+    "total_iterations": 2
   }
 }

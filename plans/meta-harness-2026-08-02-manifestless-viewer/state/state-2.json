@@ -1,0 +1,31 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 2,
+  "candidate_commit": "2b90126bde97d5809dacc20e7666cd6c32a264a9",
+  "candidate_tree": "585a0ec53b8a190a3839f66ee03baf3b75bb7550",
+  "prior_scores": {
+    "manifestless_correctness": 8,
+    "projection_integrity": 7,
+    "isolation_and_readonly": 8,
+    "launcher_lifecycle": 8,
+    "backward_compatibility": 8
+  },
+  "scores": {
+    "manifestless_correctness": 8,
+    "projection_integrity": 9,
+    "isolation_and_readonly": 8,
+    "launcher_lifecycle": 8,
+    "backward_compatibility": 9
+  },
+  "weighted_composite": 8.4,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: reserving authored edge IDs before deterministic generated allocation closes the protocol collision without changing authored IDs or node allocation",
+  "what_not_to_retry": [
+    "Do not consume another iteration after SUCCESS at max iteration 2",
+    "Do not change the locked rubric",
+    "Do not rerun or modify frozen baselines",
+    "Do not install, push, deliver, or operate panes"
+  ],
+  "stop_condition": "SUCCESS"
+}

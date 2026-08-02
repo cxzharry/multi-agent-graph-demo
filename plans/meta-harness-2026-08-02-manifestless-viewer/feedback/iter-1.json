@@ -4,16 +4,16 @@
   "intent": "DELIVER",
   "candidate_commit": "f2ab5c246b1b4bfa3e5d2f08de69818dedc5174b",
   "candidate_tree": "f2a85bab4c9b9158e2ca961f4a85243d3e20e755",
-  "passed": true,
-  "weighted_composite": 8.2,
+  "passed": false,
+  "weighted_composite": 7.8,
   "scores": {
     "manifestless_correctness": {
       "score": 8,
       "evidence": "Launcher tests cover synthetic selection, synthetic mode with null manifest, exact revision readiness, and cold launch; publisher tests cover synthetic publish without a manifest file and current-revision snapshot projection. Both Python suites passed."
     },
     "projection_integrity": {
-      "score": 9,
-      "evidence": "Publisher tests cover deterministic output, control-only synthetic edges, current-revision dynamic lanes, reassignment event mapping, unmapped custom additions, collision-free IDs, and safe branch/cycle failures. Publisher suite passed 28 tests."
+      "score": 7,
+      "evidence": "The initial publisher suite passed 28 tests, but P6 later demonstrated that a generated live control edge could reuse an authored edge ID. This violates role-graph protocol ID uniqueness and requires a publisher fix-forward."
     },
     "isolation_and_readonly": {
       "score": 8,
@@ -37,7 +37,8 @@
     "projection_integrity": [
       "test_synthetic_manifest_is_deterministic_and_only_claims_control_edges",
       "test_custom_node_tracks_reassignment_tip_and_chain_events",
-      "test_live_addition_allocates_around_an_authored_node_id"
+      "test_live_addition_allocates_around_an_authored_node_id",
+      "P6 finding p6-generated-control-edge-id-collision: generated control edge ID collided with an authored edge ID"
     ],
     "isolation_and_readonly": [
       "test_workspace_mismatch_fails_before_network_access",
@@ -92,7 +93,25 @@
     "product_iteration_consumed": false,
     "detail": "The worktree had no node_modules. No install was run; package.json and package-lock.json matched the source checkout, whose existing dependency tree was exposed through a temporary symlink for the exact checks and removed by a shell trap."
   },
-  "failures": [],
-  "failure_class": null,
-  "targeted_criteria": []
+  "failures": [
+    {
+      "severity": "blocking",
+      "criterion": "projection_integrity",
+      "finding": "Generated live control-edge IDs did not allocate around authored edge IDs",
+      "expected": "Every generated control edge has a stable unique ID while every authored edge and ID remains unchanged",
+      "actual": "A generated live control edge could reuse the preferred ID of an authored edge, producing duplicate protocol IDs",
+      "evidence_ref": "P6 finding p6-generated-control-edge-id-collision"
+    }
+  ],
+  "failure_class": "implementation",
+  "targeted_criteria": [
+    "projection_integrity"
+  ],
+  "attribution": {
+    "executor": "p2_impl",
+    "learning_owner": "publisher_projection",
+    "failure_domain": "graph_projection_identity",
+    "confidence": "high",
+    "reason": "The generated edge allocator in adapters/herdr/publisher.py did not include authored edge IDs"
+  }
 }
