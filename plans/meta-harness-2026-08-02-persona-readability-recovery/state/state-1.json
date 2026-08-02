@@ -1,0 +1,28 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "fd5128b7e8cb96df58cf351caf592d49586d6e2c",
+  "candidate_tree": "c1c6aff006b0ac41c24db1d24928b2863ff603f6",
+  "prior_scores": null,
+  "scores": {
+    "lane_to_p_mapping": 9,
+    "meaningful_deterministic_generated_at": 9,
+    "seconds_ms_iso_timestamp_rendering": 9,
+    "role_first_compact_p_nodes": 9,
+    "retained_custom_loop_layout_runtime_contracts": 8
+  },
+  "weighted_composite": 8.8,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: live slot mapping, deterministic time normalization, and selective generated-internal hiding restore persona readability while retaining authored, loop, layout, launcher, and runtime contracts",
+  "what_not_to_retry": [
+    "Do not run another iteration after SUCCESS",
+    "Do not fall back to stale lane.slot when an exact live slot lane_id exists",
+    "Do not emit nondeterministic generatedAt or expose raw epoch values",
+    "Do not expose generated auto IDs or redundant generated lane tasks",
+    "Do not hide authored IDs or authored task text",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, sync, push, deliver, modify Herdr Orchestrator, close panes, or operate live panes"
+  ],
+  "stop_condition": "SUCCESS"
+}

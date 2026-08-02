@@ -1,0 +1,37 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 owns combined verification of two accepted fixes against one browser/runtime candidate",
+  "candidate_commit": "fd5128b7e8cb96df58cf351caf592d49586d6e2c",
+  "candidate_tree": "c1c6aff006b0ac41c24db1d24928b2863ff603f6",
+  "routed_input": {
+    "source": "P8/P9",
+    "finding_receipts": [
+      "layout_qc-g1.json",
+      "persona_qc-g1.json"
+    ],
+    "failure_class": "implementation",
+    "expected": "Live lane identity, snapshot and event time, and node content are immediately meaningful to operators without weakening custom graph or runtime contracts",
+    "actual": "Lane assignees could show stale slots, generatedAt could be unhelpful, raw mixed timestamps leaked into the UI, and generated node internals competed with role identity"
+  },
+  "prior_scores": null,
+  "failure_class": null,
+  "targeted_criteria": [
+    "lane_to_p_mapping",
+    "meaningful_deterministic_generated_at",
+    "seconds_ms_iso_timestamp_rendering",
+    "role_first_compact_p_nodes"
+  ],
+  "hypothesis": "Binding lanes to live slot lane_id, normalizing publisher time, and hiding only decoded generated internals restores persona readability without changing authored or runtime contracts",
+  "what_not_to_retry": [
+    "Do not infer live P identity from stale lane.slot when an exact slot lane_id exists",
+    "Do not emit wall-clock generatedAt values that make identical state nondeterministic",
+    "Do not expose raw epoch values, generated auto IDs, or redundant generated lane-label tasks",
+    "Do not hide authored IDs or authored custom task text",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, sync, push, deliver, modify Herdr Orchestrator, close panes, or operate live panes"
+  ]
+}

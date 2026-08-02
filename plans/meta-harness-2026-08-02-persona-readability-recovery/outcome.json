@@ -1,0 +1,84 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.8,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 8.8
+    }
+  ],
+  "final_scores": {
+    "lane_to_p_mapping": 9,
+    "meaningful_deterministic_generated_at": 9,
+    "seconds_ms_iso_timestamp_rendering": 9,
+    "role_first_compact_p_nodes": 9,
+    "retained_custom_loop_layout_runtime_contracts": 8
+  },
+  "routed_inputs": [
+    {
+      "source": "P8/P9",
+      "finding_receipts": [
+        "layout_qc-g1.json",
+        "persona_qc-g1.json"
+      ],
+      "status": "resolved"
+    }
+  ],
+  "product_findings": [],
+  "product_corrections": [
+    {
+      "accepted_commit": "f3c9360cbad849707787f11a4058cceba9d8e974",
+      "integrated_commit": "49e364b6ebc2c5e02b1322a76406440b2b58f3bf",
+      "summary": "Map live lanes to matching P slots and emit meaningful deterministic generatedAt"
+    },
+    {
+      "accepted_commit": "780d984afdfb71ae58eabb141910ec63cd42340b",
+      "integrated_commit": "fd5128b7e8cb96df58cf351caf592d49586d6e2c",
+      "summary": "Render normalized time and role-first compact-P nodes without generated internals"
+    }
+  ],
+  "prior_harnesses": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {
+      "audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {
+      "audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": {
+      "audit_tree": "53189bc2bd72067cf169ee84906cc94e32fc0239",
+      "modified": false
+    }
+  },
+  "frozen_baselines": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted",
+    "path": "/Users/haido/.claude/traces/runs/20260802-persona-readability-recovery-integration-g7.json",
+    "generator": "/Users/haido/.agents/skills/meta-harness/scripts/extract-trace.py"
+  },
+  "completed_at_utc": "2026-08-02T09:44:53Z"
+}

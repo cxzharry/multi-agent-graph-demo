@@ -1,0 +1,134 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "fd5128b7e8cb96df58cf351caf592d49586d6e2c",
+  "candidate_tree": "c1c6aff006b0ac41c24db1d24928b2863ff603f6",
+  "passed": true,
+  "weighted_composite": 8.8,
+  "scores": {
+    "lane_to_p_mapping": {
+      "score": 9,
+      "evidence": "Publisher regression tests prove synthetic lane nodes prefer the exact sorted slot whose lane_id matches the live lane tip, mapping functional, layout, and persona QC to P7, P8, and P9 instead of stale lane.slot values. The same helper is used for materialized and added live lane nodes."
+    },
+    "meaningful_deterministic_generated_at": {
+      "score": 9,
+      "evidence": "Publisher tests prove generatedAt selects the latest valid event across epoch seconds, epoch milliseconds, and ISO values, ignores invalid values, and produces the same deterministic valid metadata fallback across repeated snapshots."
+    },
+    "seconds_ms_iso_timestamp_rendering": {
+      "score": 9,
+      "evidence": "Browser smoke posts seconds, milliseconds, and ISO event times for the same instant and proves all three timeline labels plus the snapshot generated time render the same readable local clock while raw epoch values are absent."
+    },
+    "role_first_compact_p_nodes": {
+      "score": 9,
+      "evidence": "Browser smoke proves ROLE is each node heading, two roles can share exact compact P5 chips, decoded generated IDs and redundant generated lane-label tasks are hidden, authored task and ID remain visible, and assignee chips have accessible labels."
+    },
+    "retained_custom_loop_layout_runtime_contracts": {
+      "score": 8,
+      "evidence": "Publisher 34 tests, launcher 41 tests, Vitest 37 tests, production build, and browser smoke all passed. Browser smoke retained custom authored content, branched-loop rendering, top-down same-row placement, single straight forward links, selection persistence, live updates, readable scaling, and no reported browser error. All five prior harness trees remained exact."
+    }
+  },
+  "criterion_evidence": {
+    "lane_to_p_mapping": [
+      "test_synthetic_lanes_prefer_exact_slot_lane_assignments",
+      "_live_lane_assignee is shared by synthetic, materialized, and added live lane nodes"
+    ],
+    "meaningful_deterministic_generated_at": [
+      "test_generated_at_uses_latest_valid_mixed_format_event_time",
+      "test_generated_at_has_stable_fallback_when_event_times_are_invalid"
+    ],
+    "seconds_ms_iso_timestamp_rendering": [
+      "browser persona fixture posts epoch seconds, epoch milliseconds, and ISO timestamps",
+      "browser assertions require one recentClockLabel and reject both raw epoch forms"
+    ],
+    "role_first_compact_p_nodes": [
+      "browser assertions require Publisher and Review headings with P5 chips",
+      "generated task and ID counts are zero while authored task and ID remain exact"
+    ],
+    "retained_custom_loop_layout_runtime_contracts": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 34 passed",
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 41 passed",
+      "npm test -- --run: 4 files and 37 tests passed",
+      "npm run build: pass",
+      "node tests/browser-smoke.mjs: pass with scale 1.034",
+      "git diff --check: pass",
+      "all five prior harness subtree identity checks before and after matrix: pass"
+    ]
+  },
+  "routed_input": {
+    "source": "P8/P9",
+    "finding_receipts": [
+      "layout_qc-g1.json",
+      "persona_qc-g1.json"
+    ],
+    "status": "resolved"
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "34 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "41 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 37 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Persona, custom loop/layout, and runtime browser assertions passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "prior_harness_preservation": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {
+      "audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {
+      "audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": {
+      "audit_tree": "53189bc2bd72067cf169ee84906cc94e32fc0239",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    }
+  },
+  "dependency_state": {
+    "installed_by_run": false,
+    "package_files_identical_to_source": true,
+    "temporary_symlink_needed": false,
+    "detail": "A real worktree node_modules directory was already present; the run neither installed nor synchronized dependencies and created no dependency link."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

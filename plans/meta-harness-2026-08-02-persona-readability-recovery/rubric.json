@@ -1,0 +1,55 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "DELIVER",
+  "locked": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "orchestration_mode": "local_controller",
+  "criteria": [
+    {
+      "id": "lane_to_p_mapping",
+      "description": "Live lanes resolve the exact matching slot lane_id to compact P assignees in synthetic and materialized manifests",
+      "weight": 1
+    },
+    {
+      "id": "meaningful_deterministic_generated_at",
+      "description": "generatedAt selects the latest valid normalized event time with deterministic valid metadata and epoch fallbacks",
+      "weight": 1
+    },
+    {
+      "id": "seconds_ms_iso_timestamp_rendering",
+      "description": "Epoch seconds, epoch milliseconds, and ISO generated/event times render as one readable local clock without raw epochs",
+      "weight": 1
+    },
+    {
+      "id": "role_first_compact_p_nodes",
+      "description": "Nodes are role-first with exact compact P chips, generated internals hidden, and authored IDs and task text retained",
+      "weight": 1
+    },
+    {
+      "id": "retained_custom_loop_layout_runtime_contracts",
+      "description": "Custom manifests, loop/layout behavior, selection, live updates, launcher lifecycle, full matrix, and prior harness audit contracts remain correct",
+      "weight": 1
+    }
+  ],
+  "routed_inputs": [
+    "layout_qc-g1.json",
+    "persona_qc-g1.json"
+  ],
+  "prior_harness_audit_trees": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": "3236642651c3f9418df0655f83c318d926ef6c4b",
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": "53189bc2bd72067cf169ee84906cc94e32fc0239"
+  },
+  "frozen_comparison": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false
+  }
+}
