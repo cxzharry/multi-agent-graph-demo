@@ -178,7 +178,69 @@ try {
 
   const compact = await readFixture('compact.json');
   const branched = await readFixture('branched-loop.json');
+  const recentEpochMilliseconds = Math.floor(Date.now() / 1000) * 1000;
+  const recentEpochSeconds = recentEpochMilliseconds / 1000;
+  const recentIsoTime = new Date(recentEpochMilliseconds).toISOString();
+  const recentClockLabel = formatSmokeTimestamp(recentEpochMilliseconds);
+  const generatedNodeId = `auto-${Buffer.from('publisher_projection').toString('hex')}`;
+  const persona = {
+    ...structuredClone(compact),
+    scopeId: 'persona:ui',
+    runId: 'role-assignee-timestamps',
+    generatedAt: recentIsoTime,
+    title: 'Persona UI contract',
+    nodes: [
+      {
+        id: generatedNodeId,
+        role: 'Publisher',
+        assignee: 'P5',
+        layer: 0,
+        status: 'running',
+        task: 'Publisher Projection',
+        generation: 1,
+      },
+      {
+        id: 'authored-review',
+        role: 'Review',
+        assignee: 'P5',
+        layer: 1,
+        status: 'pending',
+        task: 'Check authored decision quality',
+        generation: 1,
+      },
+    ],
+    edges: [
+      {
+        id: 'publisher-to-review',
+        source: generatedNodeId,
+        target: 'authored-review',
+        kind: 'forward',
+        status: 'active',
+      },
+    ],
+    events: [
+      {
+        id: 'epoch-seconds-event',
+        at: recentEpochSeconds,
+        nodeId: generatedNodeId,
+        message: 'Epoch seconds event',
+      },
+      {
+        id: 'epoch-milliseconds-event',
+        at: recentEpochMilliseconds,
+        nodeId: 'authored-review',
+        message: 'Epoch milliseconds event',
+      },
+      {
+        id: 'iso-event',
+        at: recentIsoTime,
+        nodeId: 'authored-review',
+        message: 'ISO event',
+      },
+    ],
+  };
   await postSnapshot(baseUrl, compact);
+  await postSnapshot(baseUrl, persona);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
     {
@@ -215,7 +277,7 @@ try {
   assert.equal(missingUrl.searchParams.get('runId'), missingSelection.runId);
 
   await page.goto(baseUrl);
-  await waitForNodeCount(page, branched.nodes.length);
+  await waitForNodeCount(page, persona.nodes.length);
 
   const selector = page.locator('[data-testid="graph-selector"]');
   await selector.selectOption(
@@ -234,6 +296,42 @@ try {
 
   await page.reload();
   await waitForNodeCount(page, compact.nodes.length);
+
+  await selector.selectOption(
+    new URLSearchParams({
+      scopeId: persona.scopeId,
+      runId: persona.runId,
+    }).toString(),
+  );
+  await waitForNodeCount(page, persona.nodes.length);
+  const generatedNode = page.locator(`[data-node-id="${generatedNodeId}"]`);
+  const authoredNode = page.locator('[data-node-id="authored-review"]');
+  assert.equal(await generatedNode.locator('h3').textContent(), 'Publisher');
+  assert.equal(await authoredNode.locator('h3').textContent(), 'Review');
+  assert.equal(await generatedNode.locator('.assignee-chip').textContent(), 'P5');
+  assert.equal(await authoredNode.locator('.assignee-chip').textContent(), 'P5');
+  assert.equal(await generatedNode.locator('.role-task').count(), 0);
+  assert.equal(await generatedNode.locator('.role-id').count(), 0);
+  assert.equal(
+    await authoredNode.locator('.role-task').textContent(),
+    'Check authored decision quality',
+  );
+  assert.equal(await authoredNode.locator('.role-id').textContent(), 'authored-review');
+  const generatedNodeText = await generatedNode.innerText();
+  assert.ok(!generatedNodeText.includes(generatedNodeId));
+  assert.ok(!generatedNodeText.includes('Publisher Projection'));
+  const personaText = await page.locator('.viewer-layout').innerText();
+  assert.ok(!personaText.includes(String(recentEpochSeconds)));
+  assert.ok(!personaText.includes(String(recentEpochMilliseconds)));
+  const personaTimelineMeta = await page
+    .locator('.timeline-item small')
+    .allTextContents();
+  assert.equal(personaTimelineMeta.length, 3);
+  assert.ok(
+    personaTimelineMeta.every(value => value.includes(recentClockLabel)),
+    `All timestamp forms must render as ${recentClockLabel}: ${personaTimelineMeta.join(', ')}`,
+  );
+  await page.locator('.snapshot-time').getByText(recentClockLabel).waitFor();
 
   await selector.selectOption(
     new URLSearchParams({
@@ -416,5 +514,5 @@ function formatSmokeTimestamp(value) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-  }).format(Date.parse(value));
+  }).format(typeof value === 'number' ? value : Date.parse(value));
 }

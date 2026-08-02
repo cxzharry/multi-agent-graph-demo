@@ -438,6 +438,10 @@ select {
   -webkit-line-clamp: 2;
 }
 
+.role-node-no-task .role-status {
+  margin-top: 60px;
+}
+
 .role-status {
   display: flex;
   align-items: center;

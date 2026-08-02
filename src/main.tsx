@@ -301,10 +301,17 @@ function eventValue(event: GraphEvent, key: string) {
     : '';
 }
 
-function formatTimestamp(value: string) {
-  const timestamp = Date.parse(value);
+function formatTimestamp(value: string | number) {
+  const text = String(value).trim();
+  const numeric = Number(text);
+  const timestamp =
+    text && Number.isFinite(numeric)
+      ? Math.abs(numeric) < 1_000_000_000_000
+        ? numeric * 1000
+        : numeric
+      : Date.parse(text);
   return Number.isNaN(timestamp)
-    ? value
+    ? text
     : new Intl.DateTimeFormat(undefined, {
         hour: '2-digit',
         minute: '2-digit',
