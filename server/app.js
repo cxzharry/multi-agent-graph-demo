@@ -153,6 +153,7 @@ export function createApp({
         sendJson(response, 200, {
           service: 'herdr-role-graph-viewer',
           schemaVersion: 'role-graph/v1',
+          capabilities: ['space-name-summary'],
         });
         return;
       }

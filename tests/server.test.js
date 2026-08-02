@@ -117,6 +117,7 @@ describe('role graph server', () => {
     expect(await response.json()).toEqual({
       service: 'herdr-role-graph-viewer',
       schemaVersion: 'role-graph/v1',
+      capabilities: ['space-name-summary'],
     });
   });
 
