@@ -268,6 +268,8 @@ def _herdr(*args: str) -> dict[str, Any]:
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip()
         raise LauncherError("herdr_error", message or f"herdr {' '.join(args)} failed")
+    if not result.stdout.strip():
+        return {}
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as error:
@@ -649,12 +651,14 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
         endpoint = f"http://127.0.0.1:{port}/api/snapshots"
         publisher_pane = _find_publisher(workspace_id, selected.path, selection, endpoint)
         publisher_reused = publisher_pane is not None
+        replace_current = False
         if publisher_pane is None:
             publisher_pane = _find_publisher_for_state(
                 workspace_id, selected.path, endpoint
             )
             if publisher_pane is not None:
                 _herdr("pane", "send-keys", publisher_pane, "ctrl+c")
+                replace_current = True
             else:
                 anchor_pane = server_pane or p1_pane
                 publisher_pane = _split_pane(
@@ -678,6 +682,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     "--state",
                     str(selected.path),
                     *topology_args,
+                    *(["--replace-current"] if replace_current else []),
                     "--workspace-id",
                     workspace_id,
                     "--endpoint",

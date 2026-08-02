@@ -726,6 +726,7 @@ class StartViewerTest(unittest.TestCase):
             self.assertEqual(len(replacement), 1)
             self.assertEqual(replacement[0][2], "publisher")
             self.assertIn("--manifest " + str(manifest.resolve()), replacement[0][3])
+            self.assertIn("--replace-current", replacement[0][3].split())
             self.assertFalse(any(call[:2] == ("pane", "split") for call in calls))
             self.assertFalse(result["publisher"]["reused"])
 
@@ -780,6 +781,63 @@ class StartViewerTest(unittest.TestCase):
             launcher._herdr("pane", "list", "--workspace", "w1")
 
         self.assertEqual(run.call_args.kwargs["timeout"], launcher.HERDR_TIMEOUT_SECONDS)
+
+    def test_cold_pane_run_accepts_empty_stdout_success(self):
+        launcher = self.require_launcher()
+
+        with mock.patch.object(
+            launcher.subprocess,
+            "run",
+            return_value=mock.Mock(returncode=0, stdout="", stderr=""),
+        ):
+            response = launcher._herdr("pane", "run", "publisher", "command")
+
+        self.assertEqual(response, {})
+
+    def test_mode_switch_send_keys_accepts_empty_stdout_success(self):
+        launcher = self.require_launcher()
+
+        with mock.patch.object(
+            launcher.subprocess,
+            "run",
+            return_value=mock.Mock(returncode=0, stdout="", stderr=""),
+        ):
+            response = launcher._herdr(
+                "pane", "send-keys", "publisher", "ctrl+c"
+            )
+
+        self.assertEqual(response, {})
+
+    def test_herdr_still_parses_json_query_response(self):
+        launcher = self.require_launcher()
+        expected = {"result": {"panes": [{"pane_id": "w1:p1"}]}}
+
+        with mock.patch.object(
+            launcher.subprocess,
+            "run",
+            return_value=mock.Mock(
+                returncode=0, stdout=json.dumps(expected), stderr=""
+            ),
+        ):
+            response = launcher._herdr("pane", "list", "--workspace", "w1")
+
+        self.assertEqual(response, expected)
+
+    def test_split_pane_still_requires_pane_result(self):
+        launcher = self.require_launcher()
+
+        with mock.patch.object(launcher, "_herdr", return_value={}):
+            with self.assertRaises(launcher.LauncherError) as raised:
+                launcher._split_pane(
+                    "w1:p1",
+                    Path("/tmp/repo"),
+                    "graph-viewer",
+                    direction="right",
+                    ratio="0.32",
+                )
+
+        self.assertEqual(raised.exception.code, "herdr_error")
+        self.assertEqual(str(raised.exception), "pane split returned no pane_id")
 
     def test_cold_start_from_non_p1_pane_anchors_selected_controller_p1(self):
         launcher = self.require_launcher()
@@ -885,6 +943,7 @@ class StartViewerTest(unittest.TestCase):
             publisher_command = commands["pane-2"]
             self.assertIn("--manifest " + str(manifest.resolve()), publisher_command)
             self.assertIn("--workspace-id w1", publisher_command)
+            self.assertNotIn("--replace-current", publisher_command.split())
 
     def test_manifestless_launch_emits_synthetic_mode_and_null_manifest(self):
         launcher = self.require_launcher()
@@ -951,6 +1010,7 @@ class StartViewerTest(unittest.TestCase):
             self.assertEqual(len(commands), 1)
             self.assertIn("--synthesize", commands[0])
             self.assertNotIn("--manifest", commands[0])
+            self.assertNotIn("--replace-current", commands[0].split())
 
     def test_reused_server_from_non_p1_pane_anchors_unique_controller_p1(self):
         launcher = self.require_launcher()
