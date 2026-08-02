@@ -484,6 +484,14 @@ def _validate_custom_manifest(path: Path) -> None:
         node_ids.add(node_id)
         _manifest_string(node.get("role"), f"{node_path}.role")
         _manifest_string(node.get("assignee"), f"{node_path}.assignee")
+        _manifest_string(node.get("task"), f"{node_path}.task")
+        if "layer" in node:
+            layer = node["layer"]
+            if isinstance(layer, bool) or not isinstance(layer, int) or layer < 0:
+                raise LauncherError(
+                    "invalid_manifest",
+                    f"{node_path}.layer must be a non-negative integer",
+                )
         source = _manifest_object(node.get("source"), f"{node_path}.source")
         source_type = _manifest_string(
             source.get("type"), f"{node_path}.source.type"

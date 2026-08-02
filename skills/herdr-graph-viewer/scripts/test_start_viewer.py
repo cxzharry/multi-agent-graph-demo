@@ -77,6 +77,24 @@ class StartViewerTest(unittest.TestCase):
         )
         return path
 
+    def manifest_with_node(self, **overrides) -> str:
+        node = {
+            "id": "orchestrator",
+            "role": "Orchestrator",
+            "assignee": "P1",
+            "task": "Route ready work",
+            "source": {"type": "slot", "id": "P1"},
+        }
+        node.update(overrides)
+        return json.dumps(
+            {
+                "schemaVersion": "herdr-role-graph-manifest/v1",
+                "nodes": [node],
+                "edges": [],
+                "failurePolicies": [],
+            }
+        )
+
     def assert_custom_manifest_preflight_error(
         self, manifest_contents: str, expected_message: str
     ) -> None:
@@ -291,6 +309,7 @@ class StartViewerTest(unittest.TestCase):
                             "id": "orchestrator",
                             "role": "Orchestrator",
                             "assignee": "P1",
+                            "task": "Route ready work",
                             "source": {"type": "slot", "id": "P1"},
                         }
                     ],
@@ -307,6 +326,24 @@ class StartViewerTest(unittest.TestCase):
                 }
             ),
             "edges[0].target refers to an unknown node: missing",
+        )
+
+    def test_empty_node_task_fails_before_process_discovery(self):
+        self.assert_custom_manifest_preflight_error(
+            self.manifest_with_node(task=""),
+            "nodes[0].task must be a non-empty string",
+        )
+
+    def test_wrong_type_node_layer_fails_before_process_discovery(self):
+        self.assert_custom_manifest_preflight_error(
+            self.manifest_with_node(layer="1"),
+            "nodes[0].layer must be a non-negative integer",
+        )
+
+    def test_negative_node_layer_fails_before_process_discovery(self):
+        self.assert_custom_manifest_preflight_error(
+            self.manifest_with_node(layer=-1),
+            "nodes[0].layer must be a non-negative integer",
         )
 
     def test_resolves_custom_manifest_by_exact_precedence(self):
