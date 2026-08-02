@@ -1,0 +1,68 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.8,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 8.8
+    }
+  ],
+  "final_scores": {
+    "strict_empty_query_rejection": 9,
+    "query_failure_no_mutation": 9,
+    "empty_imperative_backward_compatibility": 9,
+    "launcher_lifecycle_backward_compatibility": 8,
+    "full_integration_quality": 9
+  },
+  "routed_inputs": [
+    {
+      "source": "P6",
+      "finding_id": "p6-empty-query-strictness",
+      "status": "resolved"
+    }
+  ],
+  "product_findings": [],
+  "product_corrections": [
+    {
+      "accepted_commit": "7053eb89af5eda199df514daf56f0a38be73adfd",
+      "integrated_commit": "b64c61a8af7bc79d0062173b18fcee5c57e5897a",
+      "summary": "Reject empty successful Herdr query output before mutation while preserving empty successful imperative output"
+    }
+  ],
+  "prior_harnesses": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {
+      "audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+      "modified": false
+    }
+  },
+  "frozen_baselines": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted_in_plan_dir",
+    "path": "trace.json",
+    "note": "The trace is kept with the isolated follow-on artifacts so only this directory is committed."
+  },
+  "completed_at_utc": "2026-08-02T08:42:02Z"
+}

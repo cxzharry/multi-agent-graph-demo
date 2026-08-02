@@ -1,0 +1,121 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "b64c61a8af7bc79d0062173b18fcee5c57e5897a",
+  "candidate_tree": "8ffd9aea123958f384941130cc7799fadfc10cce",
+  "passed": true,
+  "weighted_composite": 8.8,
+  "scores": {
+    "strict_empty_query_rejection": {
+      "score": 9,
+      "evidence": "Launcher tests prove successful pane list and pane process-info commands reject empty stdout with herdr_error, while non-empty JSON query responses remain parsed."
+    },
+    "query_failure_no_mutation": {
+      "score": 9,
+      "evidence": "The two strict-query protocol tests record the complete Herdr command sequence and prove empty pane list or process-info output stops before split, rename, run, or send-keys. Invalid-response failures are re-raised instead of entering stale-pane recovery."
+    },
+    "empty_imperative_backward_compatibility": {
+      "score": 9,
+      "evidence": "Launcher tests preserve successful empty-stdout handling for pane run and pane send-keys, while pane split still requires a concrete pane result and nonzero commands still fail."
+    },
+    "launcher_lifecycle_backward_compatibility": {
+      "score": 8,
+      "evidence": "All 37 launcher tests passed, preserving selected-ledger P1 anchoring, pane isolation, no-focus behavior, exact reuse identity, same-pane replacement, stale-pane handling, locking, bounded calls, no-close behavior, and concurrent duplicate prevention."
+    },
+    "full_integration_quality": {
+      "score": 9,
+      "evidence": "Publisher 31 tests, launcher 37 tests, Vitest 37 tests, TypeScript/Vite production build, browser smoke, and git diff --check all passed. All three prior Meta-Harness directory trees matched their recorded audit identities before and after the matrix."
+    }
+  },
+  "criterion_evidence": {
+    "strict_empty_query_rejection": [
+      "test_empty_pane_list_fails_before_pane_mutation",
+      "test_empty_process_info_fails_before_pane_mutation",
+      "test_herdr_still_parses_json_query_response"
+    ],
+    "query_failure_no_mutation": [
+      "assert_empty_query_fails_before_mutation asserts exact commands",
+      "invalid_response is re-raised by both publisher discovery paths"
+    ],
+    "empty_imperative_backward_compatibility": [
+      "test_cold_pane_run_accepts_empty_stdout_success",
+      "test_mode_switch_send_keys_accepts_empty_stdout_success",
+      "test_split_pane_still_requires_pane_result"
+    ],
+    "launcher_lifecycle_backward_compatibility": [
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 37 passed"
+    ],
+    "full_integration_quality": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 31 passed",
+      "npm test -- --run: 4 files and 37 tests passed",
+      "npm run build: pass",
+      "node tests/browser-smoke.mjs: pass with scale 1.034",
+      "git diff --check: pass",
+      "prior harness tree preservation before and after matrix: pass"
+    ]
+  },
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-empty-query-strictness",
+    "status": "resolved"
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "31 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "37 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 37 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Browser smoke passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "prior_harness_preservation": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {
+      "audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    }
+  },
+  "dependency_state": {
+    "installed_by_run": false,
+    "package_files_identical_to_source": true,
+    "temporary_symlink_needed": false,
+    "detail": "A real worktree node_modules directory was already present; the run neither installed dependencies nor created or removed a dependency link."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

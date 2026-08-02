@@ -1,0 +1,32 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 owns exact verification of one accepted launcher fix; P6 is the routed finding source",
+  "candidate_commit": "b64c61a8af7bc79d0062173b18fcee5c57e5897a",
+  "candidate_tree": "8ffd9aea123958f384941130cc7799fadfc10cce",
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-empty-query-strictness",
+    "failure_class": "implementation",
+    "expected": "Empty stdout from successful Herdr queries fails before mutation while successful imperative run and send-keys keep accepting empty stdout",
+    "actual": "Empty query stdout was accepted as an empty object and could allow launcher recovery logic to continue toward mutation"
+  },
+  "prior_scores": null,
+  "failure_class": null,
+  "targeted_criteria": [
+    "strict_empty_query_rejection",
+    "query_failure_no_mutation",
+    "empty_imperative_backward_compatibility"
+  ],
+  "hypothesis": "Classifying empty successful output by command type will make queries strict without regressing real Herdr imperative compatibility",
+  "what_not_to_retry": [
+    "Do not reject empty stdout from successful pane run or pane send-keys",
+    "Do not continue stale-pane recovery after an invalid empty query response",
+    "Do not weaken pane split result validation or nonzero-exit handling",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, push, deliver, modify Herdr Orchestrator, or operate live panes"
+  ]
+}

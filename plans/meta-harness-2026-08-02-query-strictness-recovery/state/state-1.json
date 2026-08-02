@@ -1,0 +1,26 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "b64c61a8af7bc79d0062173b18fcee5c57e5897a",
+  "candidate_tree": "8ffd9aea123958f384941130cc7799fadfc10cce",
+  "prior_scores": null,
+  "scores": {
+    "strict_empty_query_rejection": 9,
+    "query_failure_no_mutation": 9,
+    "empty_imperative_backward_compatibility": 9,
+    "launcher_lifecycle_backward_compatibility": 8,
+    "full_integration_quality": 9
+  },
+  "weighted_composite": 8.8,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: command-type classification makes empty successful query output strict without regressing empty successful imperative output or launcher lifecycle contracts",
+  "what_not_to_retry": [
+    "Do not run another iteration after SUCCESS",
+    "Do not accept empty stdout from query commands",
+    "Do not reject empty stdout from successful pane run or pane send-keys",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, push, deliver, modify Herdr Orchestrator, or operate live panes"
+  ],
+  "stop_condition": "SUCCESS"
+}

@@ -1,0 +1,80 @@
+{
+  "id": "20260802-query-strictness-recovery-integration-g5",
+  "pipeline": "adversarial-dev",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "trace_kind": "run",
+  "generated": "2026-08-02T08:42:02Z",
+  "plan_dir": "plans/meta-harness-2026-08-02-query-strictness-recovery",
+  "plan_group_key": "meta-harness-2026-08-02-query-strictness-recovery",
+  "dedupe_key": "meta-harness-2026-08-02-query-strictness-recovery",
+  "feedback_sources": [
+    "feedback/iter-1.json"
+  ],
+  "sprints": {
+    "total": 1,
+    "iterations_observed": 1
+  },
+  "routed_inputs": [
+    {
+      "source": "P6",
+      "finding_id": "p6-empty-query-strictness",
+      "failure_class": "implementation",
+      "targeted_criteria": [
+        "strict_empty_query_rejection",
+        "query_failure_no_mutation",
+        "empty_imperative_backward_compatibility"
+      ],
+      "status": "resolved"
+    }
+  ],
+  "retries": [],
+  "evaluator_scores": {
+    "strict_empty_query_rejection": [9],
+    "query_failure_no_mutation": [9],
+    "empty_imperative_backward_compatibility": [9],
+    "launcher_lifecycle_backward_compatibility": [8],
+    "full_integration_quality": [9]
+  },
+  "evaluator_scores_avg": {
+    "strict_empty_query_rejection": 9,
+    "query_failure_no_mutation": 9,
+    "empty_imperative_backward_compatibility": 9,
+    "launcher_lifecycle_backward_compatibility": 8,
+    "full_integration_quality": 9
+  },
+  "criterion_evidence": {
+    "strict_empty_query_rejection": ["feedback/iter-1.json"],
+    "query_failure_no_mutation": ["feedback/iter-1.json"],
+    "empty_imperative_backward_compatibility": ["feedback/iter-1.json"],
+    "launcher_lifecycle_backward_compatibility": ["feedback/iter-1.json"],
+    "full_integration_quality": ["feedback/iter-1.json"]
+  },
+  "owner_metrics": {},
+  "friction_summary": {
+    "highest_retry_skill": null,
+    "highest_retry_executor": null,
+    "highest_learning_owner": null,
+    "lowest_avg_criterion": "launcher_lifecycle_backward_compatibility",
+    "total_retries": 0,
+    "crystallize_eligible_retries": 0,
+    "retry_failure_evidence_missing": 0,
+    "unknown_learning_owner_count": 0,
+    "exclude_from_crystallize": false,
+    "dedupe_key": "meta-harness-2026-08-02-query-strictness-recovery"
+  },
+  "environment_friction": [],
+  "outcome": "success",
+  "outcome_detail": {
+    "exit_code": "SUCCESS",
+    "normalized_outcome": "success",
+    "best_iteration": 1,
+    "composite_trajectory": [
+      {
+        "iter": 1,
+        "composite": 8.8
+      }
+    ],
+    "total_iterations": 1
+  }
+}

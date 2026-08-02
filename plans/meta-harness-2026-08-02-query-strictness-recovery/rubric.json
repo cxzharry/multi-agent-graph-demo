@@ -1,0 +1,53 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "DELIVER",
+  "locked": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "orchestration_mode": "local_controller",
+  "criteria": [
+    {
+      "id": "strict_empty_query_rejection",
+      "description": "Successful Herdr queries reject empty stdout as an invalid response",
+      "weight": 1
+    },
+    {
+      "id": "query_failure_no_mutation",
+      "description": "Empty pane list or process-info output stops before every pane mutation",
+      "weight": 1
+    },
+    {
+      "id": "empty_imperative_backward_compatibility",
+      "description": "Successful pane run and send-keys commands continue to accept empty stdout",
+      "weight": 1
+    },
+    {
+      "id": "launcher_lifecycle_backward_compatibility",
+      "description": "JSON parsing, split result, stale retry, anchoring, isolation, reuse, replacement, locking, and no-close contracts remain correct",
+      "weight": 1
+    },
+    {
+      "id": "full_integration_quality",
+      "description": "Publisher, launcher, frontend, build, browser, diff, and prior harness preservation checks all pass",
+      "weight": 1
+    }
+  ],
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-empty-query-strictness"
+  },
+  "prior_harness_audit_trees": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": "f22266db22dd1eab9b7495455a2de29e90f8fe37"
+  },
+  "frozen_comparison": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false
+  }
+}
