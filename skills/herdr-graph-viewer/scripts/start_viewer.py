@@ -21,6 +21,19 @@ from typing import Any, Callable, Iterator, NamedTuple
 DEFAULT_REPO = Path("/Users/haido/multi-agent-graph-demo")
 DEFAULT_RUNS_ROOT = Path.home() / ".codex" / "herdr-runs"
 HERDR_TIMEOUT_SECONDS = 5
+MANIFEST_SCHEMA_VERSION = "herdr-role-graph-manifest/v1"
+MANIFEST_EDGE_KINDS = {"forward", "return"}
+MANIFEST_EDGE_STATUSES = {
+    "pending",
+    "active",
+    "inactive",
+    "passed",
+    "failed",
+    "blocked",
+    "retrying",
+    "stale",
+    "skipped",
+}
 
 
 class LauncherError(RuntimeError):
@@ -406,6 +419,124 @@ def _find_publisher_for_state(
     return None
 
 
+def _manifest_object(value: Any, path: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise LauncherError("invalid_manifest", f"{path} must be a JSON object")
+    return value
+
+
+def _manifest_array(value: Any, path: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise LauncherError("invalid_manifest", f"{path} must be an array")
+    return value
+
+
+def _manifest_string(value: Any, path: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise LauncherError(
+            "invalid_manifest", f"{path} must be a non-empty string"
+        )
+    return value
+
+
+def _known_manifest_node(value: Any, node_ids: set[str], path: str) -> None:
+    node_id = _manifest_string(value, path)
+    if node_id not in node_ids:
+        raise LauncherError(
+            "invalid_manifest", f"{path} refers to an unknown node: {node_id}"
+        )
+
+
+def _validate_custom_manifest(path: Path) -> None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise LauncherError(
+            "invalid_manifest", f"Cannot read manifest {path}: {error}"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise LauncherError(
+            "invalid_manifest", f"Cannot parse manifest {path}: {error}"
+        ) from error
+
+    manifest = _manifest_object(value, "manifest")
+    if manifest.get("schemaVersion") != MANIFEST_SCHEMA_VERSION:
+        raise LauncherError(
+            "invalid_manifest",
+            f"manifest.schemaVersion must be {MANIFEST_SCHEMA_VERSION}",
+        )
+
+    nodes = _manifest_array(manifest.get("nodes"), "manifest.nodes")
+    edges = _manifest_array(manifest.get("edges"), "manifest.edges")
+    policies = _manifest_array(
+        manifest.get("failurePolicies"), "manifest.failurePolicies"
+    )
+
+    node_ids: set[str] = set()
+    for index, raw_node in enumerate(nodes):
+        node_path = f"nodes[{index}]"
+        node = _manifest_object(raw_node, node_path)
+        node_id = _manifest_string(node.get("id"), f"{node_path}.id")
+        if node_id in node_ids:
+            raise LauncherError(
+                "invalid_manifest", f"nodes contains duplicate node id: {node_id}"
+            )
+        node_ids.add(node_id)
+        _manifest_string(node.get("role"), f"{node_path}.role")
+        _manifest_string(node.get("assignee"), f"{node_path}.assignee")
+        source = _manifest_object(node.get("source"), f"{node_path}.source")
+        source_type = _manifest_string(
+            source.get("type"), f"{node_path}.source.type"
+        )
+        if source_type not in {"lane", "slot"}:
+            raise LauncherError(
+                "invalid_manifest",
+                f"{node_path}.source.type must be lane or slot",
+            )
+        _manifest_string(source.get("id"), f"{node_path}.source.id")
+
+    edge_ids: set[str] = set()
+    for index, raw_edge in enumerate(edges):
+        edge_path = f"edges[{index}]"
+        edge = _manifest_object(raw_edge, edge_path)
+        edge_id = _manifest_string(edge.get("id"), f"{edge_path}.id")
+        if edge_id in edge_ids:
+            raise LauncherError(
+                "invalid_manifest", f"edges contains duplicate edge id: {edge_id}"
+            )
+        edge_ids.add(edge_id)
+        _known_manifest_node(edge.get("source"), node_ids, f"{edge_path}.source")
+        _known_manifest_node(edge.get("target"), node_ids, f"{edge_path}.target")
+        kind = _manifest_string(edge.get("kind"), f"{edge_path}.kind")
+        if kind not in MANIFEST_EDGE_KINDS:
+            raise LauncherError(
+                "invalid_manifest", f"{edge_path}.kind has an invalid edge kind: {kind}"
+            )
+        status = _manifest_string(edge.get("status"), f"{edge_path}.status")
+        if status not in MANIFEST_EDGE_STATUSES:
+            raise LauncherError(
+                "invalid_manifest",
+                f"{edge_path}.status has an invalid edge status: {status}",
+            )
+
+    route_fields = ("gateNodeId", "returnToNodeId", "ownerNodeId", "resumeNodeId")
+    for index, raw_policy in enumerate(policies):
+        policy_path = f"failurePolicies[{index}]"
+        policy = _manifest_object(raw_policy, policy_path)
+        for field in route_fields:
+            _known_manifest_node(
+                policy.get(field), node_ids, f"{policy_path}.{field}"
+            )
+        for field in ("rerunNodeIds", "excludedNodeIds"):
+            values = _manifest_array(policy.get(field), f"{policy_path}.{field}")
+            for value_index, node_id in enumerate(values):
+                _known_manifest_node(
+                    node_id,
+                    node_ids,
+                    f"{policy_path}.{field}[{value_index}]",
+                )
+
+
 def _resolve_manifest(
     selected: SelectedState, explicit: Path | None
 ) -> ManifestSelection:
@@ -428,6 +559,7 @@ def _resolve_manifest(
                 return ManifestSelection("synthetic", None)
     if not manifest.is_file():
         raise LauncherError("missing_manifest", f"Manifest not found: {manifest}")
+    _validate_custom_manifest(manifest)
     return ManifestSelection("custom", manifest)
 
 

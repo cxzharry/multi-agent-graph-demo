@@ -63,6 +63,68 @@ class StartViewerTest(unittest.TestCase):
         )
         return path
 
+    def write_manifest(self, path: Path) -> Path:
+        path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": "herdr-role-graph-manifest/v1",
+                    "nodes": [],
+                    "edges": [],
+                    "failurePolicies": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def assert_custom_manifest_preflight_error(
+        self, manifest_contents: str, expected_message: str
+    ) -> None:
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            manifest = root / "custom-manifest.json"
+            manifest.write_text(manifest_contents, encoding="utf-8")
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                role_graph_manifest=str(manifest),
+            )
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(launcher, "_herdr") as herdr, mock.patch.object(
+                launcher, "probe_viewer"
+            ) as probe:
+                with self.assertRaises(launcher.LauncherError) as raised:
+                    launcher.launch(args)
+
+            self.assertEqual(raised.exception.code, "invalid_manifest")
+            self.assertIn(expected_message, str(raised.exception))
+            herdr.assert_not_called()
+            probe.assert_not_called()
+
     def test_selects_state_bound_to_current_p1_pane(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
@@ -200,14 +262,61 @@ class StartViewerTest(unittest.TestCase):
                 launcher._resolve_manifest(launcher._load_state(state, "w1"), None)
             self.assertEqual(raised.exception.code, "missing_manifest")
 
+    def test_malformed_custom_manifest_fails_before_process_discovery(self):
+        self.assert_custom_manifest_preflight_error("{", "Cannot parse manifest")
+
+    def test_non_object_custom_manifest_fails_before_process_discovery(self):
+        self.assert_custom_manifest_preflight_error("[]", "must be a JSON object")
+
+    def test_wrong_schema_custom_manifest_fails_before_process_discovery(self):
+        self.assert_custom_manifest_preflight_error(
+            json.dumps(
+                {
+                    "schemaVersion": "role-graph/v1",
+                    "nodes": [],
+                    "edges": [],
+                    "failurePolicies": [],
+                }
+            ),
+            "schemaVersion must be herdr-role-graph-manifest/v1",
+        )
+
+    def test_invalid_custom_graph_fails_before_process_discovery(self):
+        self.assert_custom_manifest_preflight_error(
+            json.dumps(
+                {
+                    "schemaVersion": "herdr-role-graph-manifest/v1",
+                    "nodes": [
+                        {
+                            "id": "orchestrator",
+                            "role": "Orchestrator",
+                            "assignee": "P1",
+                            "source": {"type": "slot", "id": "P1"},
+                        }
+                    ],
+                    "edges": [
+                        {
+                            "id": "missing-target",
+                            "source": "orchestrator",
+                            "target": "missing",
+                            "kind": "forward",
+                            "status": "active",
+                        }
+                    ],
+                    "failurePolicies": [],
+                }
+            ),
+            "edges[0].target refers to an unknown node: missing",
+        )
+
     def test_resolves_custom_manifest_by_exact_precedence(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             explicit_manifest = root / "explicit.json"
-            explicit_manifest.write_text("{}", encoding="utf-8")
+            self.write_manifest(explicit_manifest)
             state_manifest = root / "manifest.json"
-            state_manifest.write_text("{}", encoding="utf-8")
+            self.write_manifest(state_manifest)
             state = self.write_state(
                 root,
                 "current",
@@ -231,7 +340,7 @@ class StartViewerTest(unittest.TestCase):
                 root, "local", workspace="w1", pane="w1:p1", run_id="local-run"
             )
             run_local = no_manifest_state.parent / "role-graph-manifest.json"
-            run_local.write_text("{}", encoding="utf-8")
+            self.write_manifest(run_local)
             selected = launcher._load_state(no_manifest_state, "w1")
 
             self.assertEqual(
@@ -253,7 +362,7 @@ class StartViewerTest(unittest.TestCase):
             )
             manifest = state.parent / "graphs/custom.json"
             manifest.parent.mkdir()
-            manifest.write_text("{}", encoding="utf-8")
+            self.write_manifest(manifest)
 
             self.assertEqual(
                 launcher.ManifestSelection("custom", manifest.resolve()),
@@ -463,7 +572,7 @@ class StartViewerTest(unittest.TestCase):
             (repo / "server.js").write_text("", encoding="utf-8")
             (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
             manifest = root / "role-graph-manifest.json"
-            manifest.write_text("{}", encoding="utf-8")
+            self.write_manifest(manifest)
             state = self.write_state(
                 root,
                 "current",
@@ -602,7 +711,7 @@ class StartViewerTest(unittest.TestCase):
             (repo / "server.js").write_text("", encoding="utf-8")
             (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
             manifest = root / "role-graph-manifest.json"
-            manifest.write_text("{}", encoding="utf-8")
+            self.write_manifest(manifest)
             state = self.write_state(
                 root,
                 "current",
@@ -773,7 +882,7 @@ class StartViewerTest(unittest.TestCase):
             (repo / "server.js").write_text("", encoding="utf-8")
             (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
             manifest = root / "role-graph-manifest.json"
-            manifest.write_text("{}", encoding="utf-8")
+            self.write_manifest(manifest)
             state = self.write_state(
                 root,
                 "current",
@@ -853,7 +962,7 @@ class StartViewerTest(unittest.TestCase):
             (repo / "server.js").write_text("", encoding="utf-8")
             (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
             manifest = root / "role-graph-manifest.json"
-            manifest.write_text("{}", encoding="utf-8")
+            self.write_manifest(manifest)
             state = self.write_state(
                 root,
                 "current",
