@@ -1,0 +1,18 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 owns ordered integration; P6-P9 are later independent gates",
+  "integrated_candidate": "f2ab5c246b1b4bfa3e5d2f08de69818dedc5174b",
+  "prior_scores": null,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "The two accepted histories compose without product correction",
+  "what_not_to_retry": [
+    "Do not rerun frozen Compact or Multi-module baselines",
+    "Do not install, push, deliver, or operate panes",
+    "Do not change the locked rubric"
+  ]
+}

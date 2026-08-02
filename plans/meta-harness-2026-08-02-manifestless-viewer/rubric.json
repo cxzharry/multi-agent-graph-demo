@@ -1,0 +1,44 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "DELIVER",
+  "locked": true,
+  "target": 8,
+  "target_min": 7,
+  "max_iterations": 2,
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "orchestration_mode": "local_controller",
+  "criteria": [
+    {
+      "id": "manifestless_correctness",
+      "description": "No-manifest launch reaches exact ready snapshot",
+      "weight": 1
+    },
+    {
+      "id": "projection_integrity",
+      "description": "Dynamic and reassigned work stays visible without invented flow semantics",
+      "weight": 1
+    },
+    {
+      "id": "isolation_and_readonly",
+      "description": "Exact workspace only and no ledger or agent mutation",
+      "weight": 1
+    },
+    {
+      "id": "launcher_lifecycle",
+      "description": "Reuse, replacement, and right-side placement",
+      "weight": 1
+    },
+    {
+      "id": "backward_compatibility",
+      "description": "Custom graphs, protocol, build, and smoke",
+      "weight": 1
+    }
+  ],
+  "frozen_comparison": {
+    "compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false
+  }
+}

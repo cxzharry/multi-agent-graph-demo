@@ -1,0 +1,64 @@
+{
+  "id": "20260802-manifestless-viewer-integration-g1",
+  "pipeline": "adversarial-dev",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "trace_kind": "run",
+  "generated": "2026-08-02T07:10:56Z",
+  "plan_dir": "plans/meta-harness-2026-08-02-manifestless-viewer",
+  "plan_group_key": "meta-harness-2026-08-02-manifestless-viewer",
+  "dedupe_key": "meta-harness-2026-08-02-manifestless-viewer",
+  "feedback_sources": [
+    "feedback/iter-1.json"
+  ],
+  "sprints": {
+    "total": 1,
+    "iterations_observed": 1
+  },
+  "retries": [],
+  "evaluator_scores": {
+    "manifestless_correctness": [8],
+    "projection_integrity": [9],
+    "isolation_and_readonly": [8],
+    "launcher_lifecycle": [8],
+    "backward_compatibility": [8]
+  },
+  "evaluator_scores_avg": {
+    "manifestless_correctness": 8,
+    "projection_integrity": 9,
+    "isolation_and_readonly": 8,
+    "launcher_lifecycle": 8,
+    "backward_compatibility": 8
+  },
+  "criterion_evidence": {
+    "manifestless_correctness": ["feedback/iter-1.json"],
+    "projection_integrity": ["feedback/iter-1.json"],
+    "isolation_and_readonly": ["feedback/iter-1.json"],
+    "launcher_lifecycle": ["feedback/iter-1.json"],
+    "backward_compatibility": ["feedback/iter-1.json"]
+  },
+  "owner_metrics": {},
+  "friction_summary": {
+    "highest_retry_skill": null,
+    "highest_retry_executor": null,
+    "highest_learning_owner": null,
+    "lowest_avg_criterion": "manifestless_correctness",
+    "total_retries": 0,
+    "crystallize_eligible_retries": 0,
+    "retry_failure_evidence_missing": 0,
+    "unknown_learning_owner_count": 0,
+    "exclude_from_crystallize": false,
+    "dedupe_key": "meta-harness-2026-08-02-manifestless-viewer"
+  },
+  "environment_friction": [
+    "No local node_modules; reused an identical existing dependency tree through a temporary symlink without installation"
+  ],
+  "outcome": "success",
+  "outcome_detail": {
+    "exit_code": "SUCCESS",
+    "normalized_outcome": "success",
+    "best_iteration": 1,
+    "composite_trajectory": [{"iter": 1, "composite": 8.2}],
+    "total_iterations": 1
+  }
+}

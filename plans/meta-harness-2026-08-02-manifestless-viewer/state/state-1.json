@@ -1,0 +1,24 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "f2ab5c246b1b4bfa3e5d2f08de69818dedc5174b",
+  "candidate_tree": "f2a85bab4c9b9158e2ca961f4a85243d3e20e755",
+  "prior_scores": null,
+  "scores": {
+    "manifestless_correctness": 8,
+    "projection_integrity": 9,
+    "isolation_and_readonly": 8,
+    "launcher_lifecycle": 8,
+    "backward_compatibility": 8
+  },
+  "weighted_composite": 8.2,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: the accepted publisher and launcher histories compose without product correction",
+  "what_not_to_retry": [
+    "Do not consume iteration 2 after SUCCESS",
+    "Do not rerun or modify frozen baselines",
+    "Do not install, push, deliver, or operate panes"
+  ],
+  "stop_condition": "SUCCESS"
+}

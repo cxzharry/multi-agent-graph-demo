@@ -1,0 +1,98 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "f2ab5c246b1b4bfa3e5d2f08de69818dedc5174b",
+  "candidate_tree": "f2a85bab4c9b9158e2ca961f4a85243d3e20e755",
+  "passed": true,
+  "weighted_composite": 8.2,
+  "scores": {
+    "manifestless_correctness": {
+      "score": 8,
+      "evidence": "Launcher tests cover synthetic selection, synthetic mode with null manifest, exact revision readiness, and cold launch; publisher tests cover synthetic publish without a manifest file and current-revision snapshot projection. Both Python suites passed."
+    },
+    "projection_integrity": {
+      "score": 9,
+      "evidence": "Publisher tests cover deterministic output, control-only synthetic edges, current-revision dynamic lanes, reassignment event mapping, unmapped custom additions, collision-free IDs, and safe branch/cycle failures. Publisher suite passed 28 tests."
+    },
+    "isolation_and_readonly": {
+      "score": 8,
+      "evidence": "Tests reject foreign workspaces before network access, assert source has no process/pane/state mutation or receipt calls, preserve input objects, and prevent mode replacement from targeting agent panes. No manifest or cache file is created."
+    },
+    "launcher_lifecycle": {
+      "score": 8,
+      "evidence": "Launcher tests cover exact topology argv matching, same-pane mode replacement, agent-pane exclusion, right-side cold rail, reused-server placement, launch locking, bounded Herdr calls, and concurrent duplicate prevention. Launcher suite passed 30 tests."
+    },
+    "backward_compatibility": {
+      "score": 8,
+      "evidence": "Custom precedence and strict malformed/schema/graph/task/layer validation tests passed; Vitest passed 35 tests in 4 files, the Vite production build succeeded, and browser smoke passed with the 11-role scale reported as 1.034."
+    }
+  },
+  "criterion_evidence": {
+    "manifestless_correctness": [
+      "test_manifestless_launch_emits_synthetic_mode_and_null_manifest",
+      "test_wait_for_snapshot_requires_exact_revision_sequence",
+      "test_synthetic_mode_publishes_without_manifest_file"
+    ],
+    "projection_integrity": [
+      "test_synthetic_manifest_is_deterministic_and_only_claims_control_edges",
+      "test_custom_node_tracks_reassignment_tip_and_chain_events",
+      "test_live_addition_allocates_around_an_authored_node_id"
+    ],
+    "isolation_and_readonly": [
+      "test_workspace_mismatch_fails_before_network_access",
+      "test_source_has_no_process_pane_state_mutation_or_receipt_calls",
+      "test_mode_replacement_ignores_agent_panes"
+    ],
+    "launcher_lifecycle": [
+      "test_mode_switch_replaces_publisher_in_same_ordinary_pane",
+      "test_cold_start_launch_uses_lock_deterministic_build_and_exact_readiness",
+      "test_concurrent_launches_do_not_duplicate_processes"
+    ],
+    "backward_compatibility": [
+      "test_resolves_custom_manifest_by_exact_precedence",
+      "npm test -- --run: 35 passed",
+      "npm run build and node tests/browser-smoke.mjs: pass"
+    ]
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "28 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "30 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 35 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Browser smoke passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "environment_recovery": {
+    "classification": "environment",
+    "product_iteration_consumed": false,
+    "detail": "The worktree had no node_modules. No install was run; package.json and package-lock.json matched the source checkout, whose existing dependency tree was exposed through a temporary symlink for the exact checks and removed by a shell trap."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

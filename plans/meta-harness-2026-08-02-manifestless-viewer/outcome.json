@@ -1,0 +1,34 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 7,
+  "max_iterations": 2,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.2,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 8.2
+    }
+  ],
+  "product_findings": [],
+  "product_corrections": [],
+  "frozen_baselines": {
+    "compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted_in_plan_dir",
+    "path": "trace.json",
+    "note": "The user restricted all run artifacts to this plan directory, so the global trace store was not written."
+  },
+  "completed_at_utc": "2026-08-02T07:10:56Z"
+}
