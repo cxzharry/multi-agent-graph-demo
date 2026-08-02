@@ -687,6 +687,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                 workspace_id, selected.path, endpoint
             )
             replace_current = publisher_pane is not None
+        replace_equal_sequence = replace_current or not server_reused
 
         if not server_reused:
             server_pane = _split_pane(
@@ -741,7 +742,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     "--state",
                     str(selected.path),
                     *topology_args,
-                    *(["--replace-current"] if replace_current else []),
+                    *(["--replace-current"] if replace_equal_sequence else []),
                     "--workspace-id",
                     workspace_id,
                     "--space-name",

@@ -1186,10 +1186,25 @@ class StartViewerTest(unittest.TestCase):
                 revision=8,
                 role_graph_manifest=str(manifest),
             )
+            data_file = root / "w1" / "viewer" / "snapshots.jsonl"
+            data_file.parent.mkdir(parents=True)
+            data_file.write_text(
+                json.dumps(
+                    {
+                        "scopeId": "herdr:w1",
+                        "runId": "current-run",
+                        "sequence": 8,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             commands: dict[str, str] = {}
             splits: list[tuple[str, ...]] = []
+            calls: list[tuple[str, ...]] = []
 
             def fake_herdr(*args):
+                calls.append(args)
                 if args[:2] == ("workspace", "list"):
                     return self.workspace_list()
                 if args[:2] == ("pane", "list"):
@@ -1276,11 +1291,15 @@ class StartViewerTest(unittest.TestCase):
             self.assertIn("npm run build", server_command)
             self.assertNotIn("test -d node_modules ||", server_command)
             self.assertNotIn("test -f dist/index.html ||", server_command)
+            self.assertIn(str(data_file), server_command)
             publisher_command = commands["pane-2"]
             self.assertIn("--manifest " + str(manifest.resolve()), publisher_command)
             self.assertIn("--workspace-id w1", publisher_command)
             self.assertIn("--space-name herdr-orchestrator", publisher_command)
-            self.assertNotIn("--replace-current", publisher_command.split())
+            self.assertIn("--replace-current", publisher_command.split())
+            self.assertFalse(
+                any(call[:2] == ("pane", "send-keys") for call in calls)
+            )
 
     def test_manifestless_launch_emits_synthetic_mode_and_null_manifest(self):
         launcher = self.require_launcher()
