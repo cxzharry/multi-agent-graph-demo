@@ -158,7 +158,9 @@ describe('role graph server', () => {
   });
 
   test('lists graphs and returns only the requested snapshot key', async () => {
-    await post(baseUrl, snapshot('scope-a', 'shared-run', 1));
+    const spaceSnapshot = snapshot('scope-a', 'shared-run', 1);
+    spaceSnapshot.spaceName = 'herdr-orchestrator';
+    await post(baseUrl, spaceSnapshot);
     await post(baseUrl, snapshot('scope-b', 'shared-run', 2));
 
     const graphsResponse = await fetch(`${baseUrl}/api/graphs`);
@@ -166,7 +168,15 @@ describe('role graph server', () => {
       `${baseUrl}/api/snapshot?scopeId=scope-a&runId=shared-run`,
     );
 
-    expect(await graphsResponse.json()).toHaveLength(2);
+    const graphs = await graphsResponse.json();
+    expect(graphs).toHaveLength(2);
+    expect(
+      graphs.find(graph => graph.scopeId === 'scope-a'),
+    ).toMatchObject({
+      spaceName: 'herdr-orchestrator',
+      scopeId: 'scope-a',
+      runId: 'shared-run',
+    });
     expect(await snapshotResponse.json()).toMatchObject({
       scopeId: 'scope-a',
       runId: 'shared-run',

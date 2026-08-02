@@ -178,6 +178,10 @@ try {
 
   const compact = await readFixture('compact.json');
   const branched = await readFixture('branched-loop.json');
+  compact.spaceName = 'car-edge';
+  compact.title = 'Herdr standard delivery';
+  branched.spaceName = 'herdr-orchestrator';
+  branched.title = 'Herdr graph viewer hardening';
   const recentEpochMilliseconds = Math.floor(Date.now() / 1000) * 1000;
   const recentEpochSeconds = recentEpochMilliseconds / 1000;
   const recentIsoTime = new Date(recentEpochMilliseconds).toISOString();
@@ -188,6 +192,7 @@ try {
   const persona = {
     ...structuredClone(compact),
     flowId: 'auto-operational',
+    spaceName: undefined,
     scopeId: 'persona:ui',
     runId: 'role-assignee-timestamps',
     generatedAt: recentIsoTime,
@@ -314,6 +319,12 @@ try {
   await waitForNodeCount(page, persona.nodes.length);
 
   const selector = page.locator('[data-testid="graph-selector"]');
+  const optionLabels = await selector.locator('option').allTextContents();
+  assert.ok(
+    optionLabels.includes('herdr-orchestrator · Herdr graph viewer hardening'),
+  );
+  assert.ok(optionLabels.includes('car-edge · Herdr standard delivery'));
+  assert.ok(optionLabels.includes('persona:custom · Authored auto ID contract'));
   await selector.selectOption(
     new URLSearchParams({
       scopeId: compact.scopeId,
@@ -549,6 +560,11 @@ try {
       document.querySelector('[data-node-id="functional-qc"]')?.getAttribute(
         'data-status',
       ) === 'retrying',
+  );
+  assert.ok(
+    (await selector.locator('option').allTextContents()).includes(
+      'herdr-orchestrator · Herdr graph viewer hardening',
+    ),
   );
 
   await mkdir(artifactsDirectory, {recursive: true});

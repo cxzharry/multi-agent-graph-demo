@@ -82,7 +82,8 @@ export class GraphStore {
 
   listGraphs() {
     return [...this.latest.values()]
-      .map(({scopeId, runId, sequence, generatedAt, title}) => ({
+      .map(({spaceName, scopeId, runId, sequence, generatedAt, title}) => ({
+        ...(spaceName === undefined ? {} : {spaceName}),
         scopeId,
         runId,
         sequence,

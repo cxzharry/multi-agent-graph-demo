@@ -41,6 +41,10 @@ export function selectionQuery(selection: GraphSelection): string {
   }).toString();
 }
 
+export function graphOptionLabel(graph: GraphSummary): string {
+  return `${graph.spaceName ?? graph.scopeId} · ${graph.title}`;
+}
+
 export type ConnectionState =
   | 'idle'
   | 'connecting'
@@ -157,6 +161,7 @@ export function useLiveGraph() {
           current.map(graph =>
             graphMatchesSelection(graph, activeSelection)
               ? {
+                  spaceName: nextSnapshot.spaceName,
                   scopeId: nextSnapshot.scopeId,
                   runId: nextSnapshot.runId,
                   sequence: nextSnapshot.sequence,

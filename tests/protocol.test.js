@@ -62,6 +62,18 @@ describe('validateSnapshot', () => {
     expect(result.nodes[0].status).toBe('running');
   });
 
+  test('accepts and retains an optional non-empty space name', () => {
+    const result = validateSnapshot(
+      snapshot({spaceName: 'herdr-orchestrator'}),
+    );
+
+    expect(result.spaceName).toBe('herdr-orchestrator');
+  });
+
+  test.each(['', 42, null])('rejects malformed space name %j', spaceName => {
+    expect(() => validateSnapshot(snapshot({spaceName}))).toThrow(/spaceName/i);
+  });
+
   test('rejects duplicate node IDs', () => {
     const input = snapshot();
     input.nodes.push({...input.nodes[0]});

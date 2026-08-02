@@ -118,10 +118,13 @@ describe('GraphStore', () => {
     const store = new GraphStore(dataFile);
     await store.initialize();
     await store.append(snapshot('older', 'run-1', 1, '2026-07-31T09:00:00Z'));
-    await store.append(snapshot('newer', 'run-2', 3, '2026-07-31T11:00:00Z'));
+    const newer = snapshot('newer', 'run-2', 3, '2026-07-31T11:00:00Z');
+    newer.spaceName = 'herdr-orchestrator';
+    await store.append(newer);
 
     expect(store.listGraphs()).toEqual([
       {
+        spaceName: 'herdr-orchestrator',
         scopeId: 'newer',
         runId: 'run-2',
         sequence: 3,

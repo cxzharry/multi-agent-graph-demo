@@ -3,6 +3,7 @@ import {describe, expect, test} from 'vitest';
 import {getFeedbackPath, layoutRoleGraph, ROLE_NODE_WIDTH} from './layout';
 import {
   graphMatchesSelection,
+  graphOptionLabel,
   graphSelectionFromLocation,
   selectedGraphFromList,
   selectionQuery,
@@ -177,6 +178,7 @@ describe('getFeedbackPath', () => {
 describe('live graph selection', () => {
   const summaries: GraphSummary[] = [
     {
+      spaceName: 'herdr-orchestrator',
       scopeId: 'scope:new',
       runId: 'run/new',
       sequence: 4,
@@ -204,6 +206,13 @@ describe('live graph selection', () => {
   test('falls back to the newest listed graph when the URL has no complete key', () => {
     expect(selectedGraphFromList(summaries, null)).toEqual(summaries[0]);
     expect(graphSelectionFromLocation('?scopeId=scope%3Anew')).toBeNull();
+  });
+
+  test('labels graph options by space name with a scope fallback', () => {
+    expect(graphOptionLabel(summaries[0])).toBe(
+      'herdr-orchestrator · Newest graph',
+    );
+    expect(graphOptionLabel(summaries[1])).toBe('scope:old · Older graph');
   });
 
   test('does not replace a missing complete URL key with the newest graph', () => {

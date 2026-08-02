@@ -19,6 +19,7 @@ import {layoutRoleGraph} from './graph/layout';
 import {RoleNode, type RoleFlowNode} from './graph/RoleNode';
 import type {GraphEvent, GraphSummary} from './graph/types';
 import {
+  graphOptionLabel,
   graphMatchesSelection,
   selectionQuery,
   useLiveGraph,
@@ -162,7 +163,7 @@ function App() {
               )}
               {graphs.map(graph => (
                 <option key={selectionQuery(graph)} value={selectionQuery(graph)}>
-                  {graph.title} · {graph.scopeId} / {graph.runId}
+                  {graphOptionLabel(graph)}
                 </option>
               ))}
             </select>

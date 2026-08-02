@@ -58,6 +58,7 @@ export type GraphEvent = Record<string, unknown>;
 export type RoleGraphSnapshot = {
   schemaVersion: 'role-graph/v1';
   flowId?: string;
+  spaceName?: string;
   scopeId: string;
   runId: string;
   sequence: number;
@@ -72,7 +73,7 @@ export type RoleGraphSnapshot = {
 
 export type GraphSummary = Pick<
   RoleGraphSnapshot,
-  'scopeId' | 'runId' | 'sequence' | 'generatedAt' | 'title'
+  'spaceName' | 'scopeId' | 'runId' | 'sequence' | 'generatedAt' | 'title'
 >;
 
 export type GraphSelection = Pick<RoleGraphSnapshot, 'scopeId' | 'runId'>;
