@@ -1,0 +1,27 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "71bc0311cbcba972bfd5472e9f84ba6d88b79594",
+  "candidate_tree": "cd494490f2ac6af7b73a0e3d4cb26a1d13272a92",
+  "prior_scores": null,
+  "scores": {
+    "cold_query_failures_before_mutation": 9,
+    "reused_query_failures_before_mutation": 9,
+    "imperative_query_protocol_compatibility": 9,
+    "launcher_lifecycle_contracts": 8,
+    "full_integration_quality_and_audit": 9
+  },
+  "weighted_composite": 8.8,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: completing exact and same-state publisher discovery before cold server creation makes empty and malformed query failures mutation-free without regressing successful lifecycle behavior",
+  "what_not_to_retry": [
+    "Do not run another iteration after SUCCESS",
+    "Do not create or mutate a cold server pane before publisher discovery queries validate",
+    "Do not accept empty or malformed query output",
+    "Do not reject empty successful pane run or pane send-keys output",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, push, deliver, modify Herdr Orchestrator, close panes, or operate live panes"
+  ],
+  "stop_condition": "SUCCESS"
+}

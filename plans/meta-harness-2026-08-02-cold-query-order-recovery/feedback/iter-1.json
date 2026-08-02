@@ -1,0 +1,135 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "71bc0311cbcba972bfd5472e9f84ba6d88b79594",
+  "candidate_tree": "cd494490f2ac6af7b73a0e3d4cb26a1d13272a92",
+  "passed": true,
+  "weighted_composite": 8.8,
+  "scores": {
+    "cold_query_failures_before_mutation": {
+      "score": 9,
+      "evidence": "Four launcher protocol tests prove that cold empty or malformed pane-list and process-info output raises herdr_error with an exact command trace containing no split, rename, run, or send-keys."
+    },
+    "reused_query_failures_before_mutation": {
+      "score": 9,
+      "evidence": "The launcher suite proves reused-viewer empty pane-list and process-info failures stop before mutation. A focused evaluator invoked the same real protocol helper for malformed pane-list and process-info output and both exact command traces also stopped before mutation."
+    },
+    "imperative_query_protocol_compatibility": {
+      "score": 9,
+      "evidence": "Launcher tests preserve empty successful pane run and send-keys, valid JSON query parsing, nonzero failure handling, and the requirement that pane split return a concrete pane ID."
+    },
+    "launcher_lifecycle_contracts": {
+      "score": 8,
+      "evidence": "All 41 launcher tests passed, preserving selected-ledger P1 anchoring, pane isolation, no-focus behavior, exact reuse identity, same-state replacement, stale-pane recovery, locking, bounded calls, no-close behavior, and concurrent duplicate prevention."
+    },
+    "full_integration_quality_and_audit": {
+      "score": 9,
+      "evidence": "Publisher 31 tests, launcher 41 tests, Vitest 37 tests, TypeScript/Vite production build, browser smoke, and git diff --check all passed. Every prior Meta-Harness subtree matched its recorded audit identity before and after the matrix."
+    }
+  },
+  "criterion_evidence": {
+    "cold_query_failures_before_mutation": [
+      "test_cold_server_empty_pane_list_fails_before_pane_mutation",
+      "test_cold_server_malformed_pane_list_fails_before_pane_mutation",
+      "test_cold_server_empty_process_info_fails_before_pane_mutation",
+      "test_cold_server_malformed_process_info_fails_before_pane_mutation"
+    ],
+    "reused_query_failures_before_mutation": [
+      "test_empty_pane_list_fails_before_pane_mutation",
+      "test_empty_process_info_fails_before_pane_mutation",
+      "focused reused malformed pane-list protocol assertion: pass",
+      "focused reused malformed process-info protocol assertion: pass"
+    ],
+    "imperative_query_protocol_compatibility": [
+      "test_cold_pane_run_accepts_empty_stdout_success",
+      "test_mode_switch_send_keys_accepts_empty_stdout_success",
+      "test_herdr_still_parses_json_query_response",
+      "test_split_pane_still_requires_pane_result"
+    ],
+    "launcher_lifecycle_contracts": [
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 41 passed"
+    ],
+    "full_integration_quality_and_audit": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 31 passed",
+      "npm test -- --run: 4 files and 37 tests passed",
+      "npm run build: pass",
+      "node tests/browser-smoke.mjs: pass with scale 1.034",
+      "git diff --check: pass",
+      "all four prior harness subtree identity checks before and after matrix: pass"
+    ]
+  },
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-cold-query-before-mutation",
+    "status": "resolved"
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "31 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "41 tests"
+    },
+    {
+      "command": "focused reused malformed pane-list and process-info protocol assertions",
+      "result": "pass",
+      "detail": "2 cases; exact traces stop before mutation"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 37 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Browser smoke passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "prior_harness_preservation": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {
+      "audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {
+      "audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    }
+  },
+  "dependency_state": {
+    "installed_by_run": false,
+    "package_files_identical_to_source": true,
+    "temporary_symlink_needed": false,
+    "detail": "A real worktree node_modules directory was already present; the run neither installed dependencies nor created or removed a dependency link."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

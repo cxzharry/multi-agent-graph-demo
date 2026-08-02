@@ -1,0 +1,72 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.8,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 8.8
+    }
+  ],
+  "final_scores": {
+    "cold_query_failures_before_mutation": 9,
+    "reused_query_failures_before_mutation": 9,
+    "imperative_query_protocol_compatibility": 9,
+    "launcher_lifecycle_contracts": 8,
+    "full_integration_quality_and_audit": 9
+  },
+  "routed_inputs": [
+    {
+      "source": "P6",
+      "finding_id": "p6-cold-query-before-mutation",
+      "status": "resolved"
+    }
+  ],
+  "product_findings": [],
+  "product_corrections": [
+    {
+      "accepted_commit": "ed8c349e14560acd5cdac6de86ea8f0de791e9ed",
+      "integrated_commit": "71bc0311cbcba972bfd5472e9f84ba6d88b79594",
+      "summary": "Complete publisher discovery query validation before every cold or reused pane mutation"
+    }
+  ],
+  "prior_harnesses": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {
+      "audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {
+      "audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b",
+      "modified": false
+    }
+  },
+  "frozen_baselines": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted",
+    "path": "/Users/haido/.claude/traces/runs/20260802-cold-query-order-recovery-integration-g6.json",
+    "generator": "/Users/haido/.agents/skills/meta-harness/scripts/extract-trace.py"
+  },
+  "completed_at_utc": "2026-08-02T08:58:29Z"
+}

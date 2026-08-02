@@ -1,0 +1,32 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 owns exact verification of one accepted order-sensitive launcher fix; P6 is the routed finding source",
+  "candidate_commit": "71bc0311cbcba972bfd5472e9f84ba6d88b79594",
+  "candidate_tree": "cd494490f2ac6af7b73a0e3d4cb26a1d13272a92",
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-cold-query-before-mutation",
+    "failure_class": "implementation",
+    "expected": "Publisher discovery queries validate before every cold or reused pane mutation, including empty and malformed pane-list and process-info responses",
+    "actual": "Cold viewer startup could split and run the server pane before publisher-discovery query validation failed"
+  },
+  "prior_scores": null,
+  "failure_class": null,
+  "targeted_criteria": [
+    "cold_query_failures_before_mutation",
+    "reused_query_failures_before_mutation",
+    "imperative_query_protocol_compatibility"
+  ],
+  "hypothesis": "Moving exact and same-state publisher discovery before cold server creation makes query failures mutation-free without changing successful lifecycle behavior",
+  "what_not_to_retry": [
+    "Do not split or run a cold server before publisher discovery queries validate",
+    "Do not accept empty or malformed stdout from query commands",
+    "Do not reject empty stdout from successful pane run or pane send-keys",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, push, deliver, modify Herdr Orchestrator, close panes, or operate live panes"
+  ]
+}

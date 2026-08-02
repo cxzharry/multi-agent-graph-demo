@@ -1,0 +1,54 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "DELIVER",
+  "locked": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "orchestration_mode": "local_controller",
+  "criteria": [
+    {
+      "id": "cold_query_failures_before_mutation",
+      "description": "Cold empty or malformed pane-list and process-info output fails before any split, rename, run, or send-keys",
+      "weight": 1
+    },
+    {
+      "id": "reused_query_failures_before_mutation",
+      "description": "Reused-viewer empty or malformed pane-list and process-info output fails before any split, rename, run, or send-keys",
+      "weight": 1
+    },
+    {
+      "id": "imperative_query_protocol_compatibility",
+      "description": "Empty imperative success, valid JSON queries, nonzero failures, and strict split-result behavior remain correct",
+      "weight": 1
+    },
+    {
+      "id": "launcher_lifecycle_contracts",
+      "description": "P1 anchoring, isolation, exact reuse, replacement, stale recovery, locking, bounded calls, no-focus, and no-close remain correct",
+      "weight": 1
+    },
+    {
+      "id": "full_integration_quality_and_audit",
+      "description": "Full matrix and byte-identical preservation of every prior harness directory pass",
+      "weight": 1
+    }
+  ],
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-cold-query-before-mutation"
+  },
+  "prior_harness_audit_trees": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": "3236642651c3f9418df0655f83c318d926ef6c4b"
+  },
+  "frozen_comparison": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false
+  }
+}
