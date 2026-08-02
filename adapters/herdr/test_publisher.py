@@ -167,6 +167,36 @@ validateSnapshot(JSON.parse(chunks.join('')));
 
 
 class SyntheticManifestTests(unittest.TestCase):
+    def test_synthetic_lanes_prefer_exact_slot_lane_assignments(self):
+        state = fixture_state()
+        state["lanes"] = {
+            "functional_qc": {
+                "role": "Functional QC",
+                "slot": "P2",
+                "state": "ACTIVE",
+            },
+            "layout_qc": {"role": "Layout QC", "state": "ACTIVE"},
+            "persona_qc": {"role": "Persona QC", "state": "ACTIVE"},
+        }
+        state["slots"].update(
+            {
+                "P7": {"lane_id": "functional_qc", "status": "BUSY"},
+                "P8": {"lane_id": "layout_qc", "status": "BUSY"},
+                "P9": {"lane_id": "persona_qc", "status": "BUSY"},
+            }
+        )
+
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+
+        self.assertEqual(
+            {"Functional QC": "P7", "Layout QC": "P8", "Persona QC": "P9"},
+            {
+                node["role"]: node["assignee"]
+                for node in snapshot["nodes"]
+                if node["role"] != "Orchestrator"
+            },
+        )
+
     def test_synthetic_manifest_is_deterministic_and_only_claims_control_edges(self):
         state = fixture_state()
         state["lanes"]["implementation_a"].update(
@@ -254,6 +284,29 @@ class BuildSnapshotTests(unittest.TestCase):
         )
         self.assertEqual(42, snapshot["sequence"])
         self.assertEqual("2026-07-31T10:15:00Z", snapshot["generatedAt"])
+
+    def test_generated_at_uses_latest_valid_mixed_format_event_time(self):
+        state = fixture_state()
+        state["events"] = [
+            {"at": 1_700_000_000.125},
+            {"at": "2023-11-14T22:15:00Z"},
+            {"at": 1_700_000_200_000},
+            {"at": "not-a-time"},
+        ]
+
+        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+
+        self.assertEqual("2023-11-14T22:16:40Z", snapshot["generatedAt"])
+
+    def test_generated_at_has_stable_fallback_when_event_times_are_invalid(self):
+        state = fixture_state()
+        state["events"] = [{"at": None}, {"at": "not-a-time"}, {"at": True}]
+
+        first = build_snapshot(state, fixture_manifest(), "wK")
+        second = build_snapshot(copy.deepcopy(state), fixture_manifest(), "wK")
+
+        self.assertEqual("2026-07-31T10:15:00Z", first["generatedAt"])
+        self.assertEqual(first["generatedAt"], second["generatedAt"])
 
     def test_rejects_workspace_mismatch(self):
         with self.assertRaisesRegex(PublisherError, "workspace_id"):

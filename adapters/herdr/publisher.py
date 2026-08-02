@@ -94,6 +94,7 @@ def _lane_chains(
 
 
 def _lane_definition(
+    state: dict,
     root: str,
     tip: str,
     lane: dict,
@@ -104,7 +105,7 @@ def _lane_definition(
     return {
         "id": _lane_node_id(prefix, root),
         "role": lane.get("role") or label,
-        "assignee": _lane_assignee(lane, "Unassigned"),
+        "assignee": _live_lane_assignee(state, tip, lane, "Unassigned"),
         "layer": layer,
         "task": lane.get("task_summary") or label,
         "source": {"type": "lane", "id": tip},
@@ -113,6 +114,18 @@ def _lane_definition(
 
 def _lane_assignee(lane: dict, fallback: str) -> str:
     return lane.get("slot") or lane.get("assignee") or fallback
+
+
+def _live_lane_assignee(
+    state: dict,
+    lane_id: str,
+    lane: dict,
+    fallback: str,
+) -> str:
+    for slot_id, slot in sorted(state.get("slots", {}).items()):
+        if slot.get("lane_id") == lane_id:
+            return slot_id
+    return _lane_assignee(lane, fallback)
 
 
 def _lane_node_id(prefix: str, lane_id: str) -> str:
@@ -154,7 +167,7 @@ def synthesize_manifest(state: dict) -> dict:
     ]
     for root in roots:
         tip = member_to_tip[root]
-        nodes.append(_lane_definition(root, tip, lanes[tip], 1, "auto"))
+        nodes.append(_lane_definition(state, root, tip, lanes[tip], 1, "auto"))
     return {
         "schemaVersion": "herdr-role-graph-manifest/v1",
         "flowId": "auto-operational",
@@ -204,7 +217,9 @@ def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, 
         root = member_to_root[source_id]
         tip = member_to_tip[source_id]
         source["id"] = tip
-        node["assignee"] = _lane_assignee(lanes[tip], node["assignee"])
+        node["assignee"] = _live_lane_assignee(
+            state, tip, lanes[tip], node["assignee"]
+        )
         mapped_roots.add(root)
         for member in root_to_members[root]:
             lane_nodes.setdefault(member, node["id"])
@@ -214,7 +229,7 @@ def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, 
         if root in mapped_roots:
             continue
         tip = member_to_tip[root]
-        addition = _lane_definition(root, tip, lanes[tip], 1, "live")
+        addition = _lane_definition(state, root, tip, lanes[tip], 1, "live")
         addition["id"] = _allocate_live_node_id(root, used_node_ids)
         additions.append(addition)
         for member in root_to_members[root]:
@@ -429,7 +444,36 @@ def _failure_reason(record: dict, role: str) -> str:
     return f"{role} reported a finding"
 
 
+def _timestamp(value: object) -> datetime | None:
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            seconds = value / 1000 if abs(value) >= 100_000_000_000 else value
+            return datetime.fromtimestamp(seconds, timezone.utc)
+        if isinstance(value, str) and value:
+            normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+    except (OSError, OverflowError, ValueError):
+        pass
+    return None
+
+
+def _format_timestamp(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
+
+
 def _generated_at(state: dict) -> str:
+    event_times = [
+        parsed
+        for event in state.get("events", [])
+        if isinstance(event, dict)
+        if (parsed := _timestamp(event.get("at"))) is not None
+    ]
+    if event_times:
+        return _format_timestamp(max(event_times))
+
     candidates = (
         state.get("updated_at"),
         state.get("watcher", {}).get("heartbeat_at"),
@@ -437,15 +481,9 @@ def _generated_at(state: dict) -> str:
         state.get("run", {}).get("started_at"),
     )
     for value in candidates:
-        if isinstance(value, str) and value:
-            return value
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return (
-                datetime.fromtimestamp(value, timezone.utc)
-                .replace(microsecond=0)
-                .isoformat()
-                .replace("+00:00", "Z")
-            )
+        parsed = _timestamp(value)
+        if parsed is not None:
+            return _format_timestamp(parsed)
     return "1970-01-01T00:00:00Z"
 
 
