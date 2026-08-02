@@ -604,6 +604,11 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             current_pane,
             explicit=args.state,
         )
+        p1_pane = _p1_pane(selected.value)
+        if not p1_pane:
+            raise LauncherError(
+                "invalid_state", f"State has no usable P1 pane binding: {selected.path}"
+            )
         selection = _resolve_manifest(selected, args.manifest)
         revision = selected.value.get("revision")
         if not isinstance(revision, int):
@@ -616,7 +621,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
 
         if not server_reused:
             server_pane = _split_pane(
-                current_pane,
+                p1_pane,
                 repo,
                 "graph-viewer-server",
                 direction="right",
@@ -651,7 +656,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             if publisher_pane is not None:
                 _herdr("pane", "send-keys", publisher_pane, "ctrl+c")
             else:
-                anchor_pane = server_pane or current_pane
+                anchor_pane = server_pane or p1_pane
                 publisher_pane = _split_pane(
                     anchor_pane,
                     repo,

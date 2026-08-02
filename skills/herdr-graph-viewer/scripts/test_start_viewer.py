@@ -195,6 +195,48 @@ class StartViewerTest(unittest.TestCase):
 
             self.assertEqual(raised.exception.code, "workspace_mismatch")
 
+    def test_launch_rejects_selected_state_without_p1_pane_binding(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            state = self.write_state(
+                root, "current", workspace="w1", pane="w1:p1", run_id="current-run"
+            )
+            value = json.loads(state.read_text(encoding="utf-8"))
+            value["controller"]["pane_id"] = None
+            value["slots"]["P1"]["pane_id"] = None
+            state.write_text(json.dumps(value), encoding="utf-8")
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p6",
+                },
+                clear=True,
+            ), mock.patch.object(launcher, "_herdr") as herdr, mock.patch.object(
+                launcher, "probe_viewer", return_value="free"
+            ):
+                with self.assertRaises(launcher.LauncherError) as raised:
+                    launcher.launch(args)
+
+            self.assertEqual(raised.exception.code, "invalid_state")
+            self.assertIn("no usable P1 pane binding", str(raised.exception))
+            herdr.assert_not_called()
+
     def test_port_selection_reuses_viewer_and_skips_unrelated_service(self):
         launcher = self.require_launcher()
         probes = {4173: "occupied", 4174: "viewer", 4175: "free"}
@@ -739,7 +781,7 @@ class StartViewerTest(unittest.TestCase):
 
         self.assertEqual(run.call_args.kwargs["timeout"], launcher.HERDR_TIMEOUT_SECONDS)
 
-    def test_cold_start_launch_uses_lock_deterministic_build_and_exact_readiness(self):
+    def test_cold_start_from_non_p1_pane_anchors_selected_controller_p1(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -789,7 +831,7 @@ class StartViewerTest(unittest.TestCase):
                 {
                     "HERDR_ENV": "1",
                     "HERDR_WORKSPACE_ID": "w1",
-                    "HERDR_PANE_ID": "w1:p1",
+                    "HERDR_PANE_ID": "w1:p6",
                 },
                 clear=True,
             ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
@@ -910,7 +952,7 @@ class StartViewerTest(unittest.TestCase):
             self.assertIn("--synthesize", commands[0])
             self.assertNotIn("--manifest", commands[0])
 
-    def test_reused_server_splits_missing_publisher_right_of_p1(self):
+    def test_reused_server_from_non_p1_pane_anchors_unique_controller_p1(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -942,7 +984,7 @@ class StartViewerTest(unittest.TestCase):
                 raise AssertionError(args)
 
             args = Namespace(
-                state=state,
+                state=None,
                 manifest=None,
                 repo=repo,
                 runs_root=root,
@@ -955,7 +997,7 @@ class StartViewerTest(unittest.TestCase):
                 {
                     "HERDR_ENV": "1",
                     "HERDR_WORKSPACE_ID": "w1",
-                    "HERDR_PANE_ID": "w1:p1",
+                    "HERDR_PANE_ID": "w1:p6",
                 },
                 clear=True,
             ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
