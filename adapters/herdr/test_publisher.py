@@ -1,5 +1,6 @@
 import ast
 import copy
+import io
 import json
 import subprocess
 import tempfile
@@ -16,6 +17,9 @@ from adapters.herdr.publisher import (
     publish_snapshot,
     synthesize_manifest,
 )
+
+
+SPACE_NAME = "herdr-orchestrator"
 
 
 def fixture_state():
@@ -186,7 +190,7 @@ class SyntheticManifestTests(unittest.TestCase):
             }
         )
 
-        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK", SPACE_NAME)
 
         self.assertEqual(
             {"Functional QC": "P7", "Layout QC": "P8", "Persona QC": "P9"},
@@ -230,7 +234,7 @@ class SyntheticManifestTests(unittest.TestCase):
             "task_summary": "Handle late task",
         }
 
-        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK", SPACE_NAME)
 
         self.assertEqual(43, snapshot["sequence"])
         self.assertIn(
@@ -241,7 +245,7 @@ class SyntheticManifestTests(unittest.TestCase):
     def test_sparse_canonical_lanes_produce_a_protocol_valid_snapshot(self):
         state = fixture_state()
 
-        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK", SPACE_NAME)
         correction = next(
             node for node in snapshot["nodes"] if node["role"] == "Correction Owner"
         )
@@ -265,7 +269,7 @@ class SyntheticManifestTests(unittest.TestCase):
             },
         }
 
-        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK", SPACE_NAME)
         lane_ids = [node["id"] for node in snapshot["nodes"][1:]]
 
         self.assertEqual(2, len(set(lane_ids)))
@@ -273,11 +277,30 @@ class SyntheticManifestTests(unittest.TestCase):
 
 
 class BuildSnapshotTests(unittest.TestCase):
+    def test_emits_required_space_name(self):
+        snapshot = build_snapshot(
+            fixture_state(),
+            fixture_manifest(),
+            "wK",
+            space_name="herdr-orchestrator",
+        )
+
+        self.assertEqual("herdr-orchestrator", snapshot.get("spaceName"))
+
+    def test_rejects_empty_space_name(self):
+        with self.assertRaisesRegex(PublisherError, "space name"):
+            build_snapshot(
+                fixture_state(),
+                fixture_manifest(),
+                "wK",
+                space_name="",
+            )
+
     def test_synthetic_manifest_flow_id_reaches_snapshot(self):
         state = fixture_state()
         manifest = synthesize_manifest(state)
 
-        snapshot = build_snapshot(state, manifest, "wK")
+        snapshot = build_snapshot(state, manifest, "wK", SPACE_NAME)
 
         self.assertEqual("auto-operational", snapshot.get("flowId"))
 
@@ -285,12 +308,12 @@ class BuildSnapshotTests(unittest.TestCase):
         manifest = fixture_manifest()
         manifest["flowId"] = "custom/Authored Flow:v2"
 
-        snapshot = build_snapshot(fixture_state(), manifest, "wK")
+        snapshot = build_snapshot(fixture_state(), manifest, "wK", SPACE_NAME)
 
         self.assertEqual("custom/Authored Flow:v2", snapshot.get("flowId"))
 
     def test_maps_exact_workspace_to_generic_snapshot_identity(self):
-        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK")
+        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK", SPACE_NAME)
 
         self.assertEqual("role-graph/v1", snapshot["schemaVersion"])
         self.assertEqual("herdr:wK", snapshot["scopeId"])
@@ -310,7 +333,7 @@ class BuildSnapshotTests(unittest.TestCase):
             {"at": "not-a-time"},
         ]
 
-        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+        snapshot = build_snapshot(state, fixture_manifest(), "wK", SPACE_NAME)
 
         self.assertEqual("2023-11-14T22:16:40Z", snapshot["generatedAt"])
 
@@ -318,18 +341,22 @@ class BuildSnapshotTests(unittest.TestCase):
         state = fixture_state()
         state["events"] = [{"at": None}, {"at": "not-a-time"}, {"at": True}]
 
-        first = build_snapshot(state, fixture_manifest(), "wK")
-        second = build_snapshot(copy.deepcopy(state), fixture_manifest(), "wK")
+        first = build_snapshot(state, fixture_manifest(), "wK", SPACE_NAME)
+        second = build_snapshot(
+            copy.deepcopy(state), fixture_manifest(), "wK", SPACE_NAME
+        )
 
         self.assertEqual("2026-07-31T10:15:00Z", first["generatedAt"])
         self.assertEqual(first["generatedAt"], second["generatedAt"])
 
     def test_rejects_workspace_mismatch(self):
         with self.assertRaisesRegex(PublisherError, "workspace_id"):
-            build_snapshot(fixture_state(), fixture_manifest(), "another")
+            build_snapshot(
+                fixture_state(), fixture_manifest(), "another", SPACE_NAME
+            )
 
     def test_maps_slot_and_lane_sources_to_role_statuses(self):
-        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK")
+        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK", SPACE_NAME)
         nodes = {node["id"]: node for node in snapshot["nodes"]}
 
         self.assertEqual("running", nodes["orchestrator"]["status"])
@@ -339,14 +366,14 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertEqual(2, nodes["functional-qc"]["generation"])
 
     def test_preserves_same_assignee_across_multiple_logical_roles(self):
-        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK")
+        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK", SPACE_NAME)
         nodes = {node["id"]: node for node in snapshot["nodes"]}
 
         self.assertEqual("P5", nodes["integration"]["assignee"])
         self.assertEqual("P5", nodes["correction-owner"]["assignee"])
 
     def test_finding_selects_complete_matching_failure_policy(self):
-        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK")
+        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK", SPACE_NAME)
 
         self.assertEqual(
             {
@@ -363,7 +390,7 @@ class BuildSnapshotTests(unittest.TestCase):
         missing["source"]["id"] = "missing_lane"
         state = fixture_state()
 
-        snapshot = build_snapshot(state, manifest, "wK")
+        snapshot = build_snapshot(state, manifest, "wK", SPACE_NAME)
         node = next(
             item for item in snapshot["nodes"] if item["id"] == "implementation-a"
         )
@@ -376,7 +403,7 @@ class BuildSnapshotTests(unittest.TestCase):
         manifest = fixture_manifest()
         del manifest["nodes"][1]["layer"]
 
-        snapshot = build_snapshot(fixture_state(), manifest, "wK")
+        snapshot = build_snapshot(fixture_state(), manifest, "wK", SPACE_NAME)
         node = next(
             item for item in snapshot["nodes"] if item["id"] == "implementation-a"
         )
@@ -384,7 +411,7 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertNotIn("layer", node)
 
     def test_events_are_bounded_and_keep_ledger_order(self):
-        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK")
+        snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK", SPACE_NAME)
 
         self.assertEqual(50, len(snapshot["events"]))
         self.assertEqual(
@@ -398,7 +425,7 @@ class BuildSnapshotTests(unittest.TestCase):
         original_state = copy.deepcopy(state)
         original_manifest = copy.deepcopy(manifest)
 
-        build_snapshot(state, manifest, "wK")
+        build_snapshot(state, manifest, "wK", SPACE_NAME)
 
         self.assertEqual(original_state, state)
         self.assertEqual(original_manifest, manifest)
@@ -424,7 +451,7 @@ class BuildSnapshotTests(unittest.TestCase):
             }
         )
 
-        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+        snapshot = build_snapshot(state, fixture_manifest(), "wK", SPACE_NAME)
         node = next(
             item for item in snapshot["nodes"] if item["id"] == "implementation-a"
         )
@@ -445,7 +472,7 @@ class BuildSnapshotTests(unittest.TestCase):
             "generation": 1,
         }
 
-        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+        snapshot = build_snapshot(state, fixture_manifest(), "wK", SPACE_NAME)
         additions = [
             node for node in snapshot["nodes"] if node["id"].startswith("live-")
         ]
@@ -475,7 +502,7 @@ class BuildSnapshotTests(unittest.TestCase):
             }
         )
 
-        snapshot = build_snapshot(state, manifest, "wK")
+        snapshot = build_snapshot(state, manifest, "wK", SPACE_NAME)
         addition = next(
             node for node in snapshot["nodes"] if node["id"].startswith("live-")
         )
@@ -497,7 +524,7 @@ class BuildSnapshotTests(unittest.TestCase):
             "task_summary": "Handle hyphen lane",
         }
 
-        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+        snapshot = build_snapshot(state, fixture_manifest(), "wK", SPACE_NAME)
         additions = [
             node for node in snapshot["nodes"] if node["id"].startswith("live-")
         ]
@@ -525,8 +552,8 @@ class BuildSnapshotTests(unittest.TestCase):
             }
         )
 
-        first = build_snapshot(state, manifest, "wK")
-        second = build_snapshot(copy.deepcopy(state), manifest, "wK")
+        first = build_snapshot(state, manifest, "wK", SPACE_NAME)
+        second = build_snapshot(copy.deepcopy(state), manifest, "wK", SPACE_NAME)
         node_ids = [node["id"] for node in first["nodes"]]
         addition = next(
             node for node in first["nodes"] if node["role"] == "Follow-up"
@@ -556,8 +583,8 @@ class BuildSnapshotTests(unittest.TestCase):
         }
         manifest["edges"].append(authored_edge)
 
-        first = build_snapshot(state, manifest, "wK")
-        second = build_snapshot(copy.deepcopy(state), manifest, "wK")
+        first = build_snapshot(state, manifest, "wK", SPACE_NAME)
+        second = build_snapshot(copy.deepcopy(state), manifest, "wK", SPACE_NAME)
         addition = next(
             node for node in first["nodes"] if node["role"] == "Follow-up"
         )
@@ -574,6 +601,22 @@ class BuildSnapshotTests(unittest.TestCase):
 
 
 class PublishingTests(unittest.TestCase):
+    def test_rejects_empty_space_name_before_unchanged_revision_shortcut(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(fixture_state()), encoding="utf-8")
+
+            with self.assertRaisesRegex(PublisherError, "space name"):
+                publish_if_changed(
+                    state_path,
+                    Path(directory) / "manifest.json",
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    42,
+                    space_name="",
+                )
+
     def test_posts_explicit_replacement_header_when_requested(self):
         response = mock.MagicMock()
         response.__enter__.return_value.status = 202
@@ -601,6 +644,8 @@ class PublishingTests(unittest.TestCase):
             "--synthesize",
             "--workspace-id",
             "wK",
+            "--space-name",
+            "herdr-orchestrator",
             "--endpoint",
             "http://127.0.0.1:4173/api/snapshots",
             "--watch",
@@ -620,6 +665,10 @@ class PublishingTests(unittest.TestCase):
             [True, False],
             [call.kwargs["replace_current"] for call in publish.call_args_list],
         )
+        self.assertEqual(
+            ["herdr-orchestrator", "herdr-orchestrator"],
+            [call.kwargs["space_name"] for call in publish.call_args_list],
+        )
 
     def test_synthetic_mode_publishes_without_manifest_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -637,11 +686,13 @@ class PublishingTests(unittest.TestCase):
                     None,
                     None,
                     synthesize=True,
+                    space_name="herdr-orchestrator",
                 )
 
         self.assertEqual(42, revision)
         snapshot = publish.call_args.args[0]
         self.assertTrue(snapshot["title"].startswith("Auto operational view"))
+        self.assertEqual("herdr-orchestrator", snapshot["spaceName"])
 
     def test_rejects_missing_or_conflicting_publisher_modes_before_network(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -676,6 +727,7 @@ class PublishingTests(unittest.TestCase):
                                 "http://127.0.0.1:4173/api/snapshots",
                                 None,
                                 None,
+                                space_name="herdr-orchestrator",
                                 synthesize=synthesize,
                             )
 
@@ -708,6 +760,7 @@ class PublishingTests(unittest.TestCase):
                         "http://127.0.0.1:4173/api/snapshots",
                         None,
                         None,
+                        space_name="herdr-orchestrator",
                         synthesize=True,
                     )
 
@@ -735,6 +788,7 @@ class PublishingTests(unittest.TestCase):
                         "http://127.0.0.1:4173/api/snapshots",
                         None,
                         None,
+                        space_name="herdr-orchestrator",
                         synthesize=True,
                     )
 
@@ -762,6 +816,7 @@ class PublishingTests(unittest.TestCase):
                         "http://127.0.0.1:4173/api/snapshots",
                         None,
                         None,
+                        space_name="herdr-orchestrator",
                     )
 
             publish.assert_not_called()
@@ -787,6 +842,7 @@ class PublishingTests(unittest.TestCase):
                     "http://127.0.0.1:4173/api/snapshots",
                     None,
                     None,
+                    space_name="herdr-orchestrator",
                 )
                 unchanged = publish_if_changed(
                     state_path,
@@ -795,6 +851,7 @@ class PublishingTests(unittest.TestCase):
                     "http://127.0.0.1:4173/api/snapshots",
                     None,
                     revision,
+                    space_name="herdr-orchestrator",
                 )
 
             self.assertEqual(42, revision)
@@ -825,6 +882,7 @@ class PublishingTests(unittest.TestCase):
                         "http://127.0.0.1:4173/api/snapshots",
                         None,
                         None,
+                        space_name="herdr-orchestrator",
                     )
 
             publish.assert_not_called()
@@ -900,6 +958,40 @@ class ReadOnlyContractTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_requires_space_name(self):
+        with mock.patch("sys.stderr", new_callable=io.StringIO):
+            with self.assertRaises(SystemExit):
+                _parser().parse_args(
+                    [
+                        "--state",
+                        "state.json",
+                        "--synthesize",
+                        "--workspace-id",
+                        "wK",
+                        "--endpoint",
+                        "http://127.0.0.1:4173/api/snapshots",
+                    ]
+                )
+
+    def test_rejects_empty_space_name_argument(self):
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            with self.assertRaises(SystemExit):
+                _parser().parse_args(
+                    [
+                        "--state",
+                        "state.json",
+                        "--synthesize",
+                        "--workspace-id",
+                        "wK",
+                        "--space-name",
+                        "",
+                        "--endpoint",
+                        "http://127.0.0.1:4173/api/snapshots",
+                    ]
+                )
+
+        self.assertIn("space name must be non-empty", stderr.getvalue())
+
     def test_accepts_synthetic_mode_without_manifest(self):
         args = _parser().parse_args(
             [
@@ -908,6 +1000,8 @@ class ParserTests(unittest.TestCase):
                 "--synthesize",
                 "--workspace-id",
                 "wK",
+                "--space-name",
+                "herdr-orchestrator",
                 "--endpoint",
                 "http://127.0.0.1:4173/api/snapshots",
             ]
@@ -915,6 +1009,7 @@ class ParserTests(unittest.TestCase):
 
         self.assertTrue(args.synthesize)
         self.assertIsNone(args.manifest)
+        self.assertEqual("herdr-orchestrator", args.space_name)
 
 
 if __name__ == "__main__":

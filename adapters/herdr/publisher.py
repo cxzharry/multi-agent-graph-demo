@@ -254,12 +254,18 @@ def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, 
     return materialized, lane_nodes
 
 
-def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
+def build_snapshot(
+    state: dict,
+    manifest: dict,
+    workspace_id: str,
+    space_name: str,
+) -> dict:
     """Return one role-graph/v1 snapshot without I/O."""
     if state.get("workspace_id") != workspace_id:
         raise PublisherError(
             "workspace_id does not match the supplied workspace state"
         )
+    space_name = _space_name(space_name)
     if manifest.get("schemaVersion") != "herdr-role-graph-manifest/v1":
         raise PublisherError("unsupported manifest schemaVersion")
 
@@ -295,6 +301,7 @@ def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
         "scopeId": f"herdr:{workspace_id}",
         "runId": run_id,
         "flowId": materialized["flowId"],
+        "spaceName": space_name,
         "sequence": revision,
         "generatedAt": generated_at,
         "title": materialized.get(
@@ -342,12 +349,14 @@ def publish_if_changed(
     token: str | None,
     last_revision: int | None,
     *,
+    space_name: str,
     synthesize: bool = False,
     replace_current: bool = False,
 ) -> int:
     """Publish the supplied state only when its revision changes."""
     if synthesize == (manifest_path is not None):
         raise PublisherError("select exactly one of manifest_path or synthesize")
+    space_name = _space_name(space_name)
     state = _read_json(state_path)
     if state.get("workspace_id") != workspace_id:
         raise PublisherError(
@@ -358,7 +367,12 @@ def publish_if_changed(
         return revision
 
     manifest = synthesize_manifest(state) if synthesize else _read_json(manifest_path)
-    snapshot = build_snapshot(state, manifest, workspace_id)
+    snapshot = build_snapshot(
+        state,
+        manifest,
+        workspace_id,
+        space_name=space_name,
+    )
     publish_snapshot(snapshot, endpoint, token, replace_current=replace_current)
     return snapshot["sequence"]
 
@@ -522,6 +536,19 @@ def _positive_interval(value: str) -> float:
     return interval
 
 
+def _space_name(value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise PublisherError("space name must be non-empty")
+    return value
+
+
+def _space_name_argument(value: str) -> str:
+    try:
+        return _space_name(value)
+    except PublisherError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state", type=Path, required=True)
@@ -529,6 +556,7 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--manifest", type=Path)
     mode.add_argument("--synthesize", action="store_true")
     parser.add_argument("--workspace-id", required=True)
+    parser.add_argument("--space-name", required=True, type=_space_name_argument)
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--token")
     parser.add_argument("--watch", action="store_true")
@@ -550,6 +578,7 @@ def main() -> int:
                 args.endpoint,
                 args.token,
                 last_revision,
+                space_name=args.space_name,
                 synthesize=args.synthesize,
                 replace_current=replace_current,
             )
