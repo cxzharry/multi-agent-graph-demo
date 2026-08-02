@@ -129,7 +129,7 @@ select {
 }
 
 .graph-selector select {
-  width: min(430px, 42vw);
+  width: min(720px, 58vw);
   height: 40px;
   padding: 0 34px 0 12px;
   border: 1px solid #303946;

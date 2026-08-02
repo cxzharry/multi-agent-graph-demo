@@ -143,6 +143,37 @@ function assertInside(inner, outer, label) {
   );
 }
 
+async function selectedOptionLayout(page) {
+  return page.locator('[data-testid="graph-selector"]').evaluate(select => {
+    const styles = getComputedStyle(select);
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context) throw new Error('Missing canvas text measurement context');
+    context.font = `${styles.fontWeight} ${styles.fontSize} ${styles.fontFamily}`;
+    const selectedLabel = select.selectedOptions[0]?.textContent?.trim() ?? '';
+    const contentWidth =
+      select.clientWidth -
+      Number.parseFloat(styles.paddingLeft) -
+      Number.parseFloat(styles.paddingRight);
+    const bounds = element => {
+      const rect = element.getBoundingClientRect();
+      return {left: rect.left, right: rect.right};
+    };
+    const header = document.querySelector('.viewer-header');
+    const controls = document.querySelector('.viewer-controls');
+    if (!header || !controls) throw new Error('Missing viewer header controls');
+
+    return {
+      selectedLabel,
+      textWidth: context.measureText(selectedLabel).width,
+      contentWidth,
+      viewportWidth: window.innerWidth,
+      header: bounds(header),
+      controls: bounds(controls),
+      select: bounds(select),
+    };
+  });
+}
+
 const temporaryDirectory = await mkdtemp(
   path.join(os.tmpdir(), 'role-graph-browser-smoke-'),
 );
@@ -277,9 +308,19 @@ try {
     edges: [],
     events: [],
   };
+  const selectorLayout = {
+    ...structuredClone(compact),
+    spaceName: 'herdr-orchestrator',
+    scopeId: 'herdr:wK',
+    runId: 'herdr-graph-viewer-space-selector-20260802',
+    generatedAt: new Date(recentEpochMilliseconds - 2000).toISOString(),
+    title:
+      'Auto operational view — herdr-graph-viewer-space-selector-20260802',
+  };
   await postSnapshot(baseUrl, compact);
   await postSnapshot(baseUrl, customPersona);
   await postSnapshot(baseUrl, persona);
+  await postSnapshot(baseUrl, selectorLayout);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
     {
@@ -325,6 +366,32 @@ try {
   );
   assert.ok(optionLabels.includes('car-edge · Herdr standard delivery'));
   assert.ok(optionLabels.includes('persona:custom · Authored auto ID contract'));
+  await selector.selectOption(
+    new URLSearchParams({
+      scopeId: selectorLayout.scopeId,
+      runId: selectorLayout.runId,
+    }).toString(),
+  );
+  await waitForNodeCount(page, selectorLayout.nodes.length);
+  const selectorLayoutMetrics = await selectedOptionLayout(page);
+  assert.equal(
+    selectorLayoutMetrics.selectedLabel,
+    'herdr-orchestrator · Auto operational view — herdr-graph-viewer-space-selector-20260802',
+  );
+  assert.ok(
+    selectorLayoutMetrics.textWidth <= selectorLayoutMetrics.contentWidth,
+    `Selected label needs ${selectorLayoutMetrics.textWidth.toFixed(2)}px but only ${selectorLayoutMetrics.contentWidth.toFixed(2)}px is available`,
+  );
+  for (const [name, bounds] of Object.entries({
+    header: selectorLayoutMetrics.header,
+    controls: selectorLayoutMetrics.controls,
+    select: selectorLayoutMetrics.select,
+  })) {
+    assert.ok(
+      bounds.left >= 0 && bounds.right <= selectorLayoutMetrics.viewportWidth,
+      `${name} must remain inside the desktop viewport`,
+    );
+  }
   await selector.selectOption(
     new URLSearchParams({
       scopeId: compact.scopeId,
