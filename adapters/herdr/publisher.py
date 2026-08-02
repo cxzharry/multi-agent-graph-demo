@@ -119,8 +119,7 @@ def _lane_node_id(prefix: str, lane_id: str) -> str:
     return f"{prefix}-{lane_id.encode('utf-8').hex()}"
 
 
-def _allocate_live_node_id(lane_id: str, used_ids: set[str]) -> str:
-    preferred = _lane_node_id("live", lane_id)
+def _allocate_id(preferred: str, used_ids: set[str]) -> str:
     candidate = preferred
     suffix = 2
     while candidate in used_ids:
@@ -128,6 +127,10 @@ def _allocate_live_node_id(lane_id: str, used_ids: set[str]) -> str:
         suffix += 1
     used_ids.add(candidate)
     return candidate
+
+
+def _allocate_live_node_id(lane_id: str, used_ids: set[str]) -> str:
+    return _allocate_id(_lane_node_id("live", lane_id), used_ids)
 
 
 def synthesize_manifest(state: dict) -> dict:
@@ -220,16 +223,19 @@ def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, 
 
     if len(p1_nodes) == 1:
         source_id = p1_nodes[0]["id"]
-        materialized.setdefault("edges", []).extend(
-            {
-                "id": f"control-{source_id}-{addition['id']}",
-                "source": source_id,
-                "target": addition["id"],
-                "kind": "forward",
-                "status": "active",
-            }
-            for addition in additions
-        )
+        edges = materialized.setdefault("edges", [])
+        used_edge_ids = {edge["id"] for edge in edges}
+        for addition in additions:
+            preferred = f"control-{source_id}-{addition['id']}"
+            edges.append(
+                {
+                    "id": _allocate_id(preferred, used_edge_ids),
+                    "source": source_id,
+                    "target": addition["id"],
+                    "kind": "forward",
+                    "status": "active",
+                }
+            )
     return materialized, lane_nodes
 
 

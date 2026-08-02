@@ -468,6 +468,40 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertEqual(len(node_ids), len(set(node_ids)))
         assert_protocol_valid(self, first)
 
+    def test_live_control_edge_allocates_around_an_authored_edge_id(self):
+        state = fixture_state()
+        state["lanes"]["late_task"] = {
+            "role": "Follow-up",
+            "slot": "P4",
+            "task_summary": "Handle late task",
+        }
+        manifest = fixture_manifest()
+        would_be_generated = "control-orchestrator-live-6c6174655f7461736b"
+        authored_edge = {
+            "id": would_be_generated,
+            "source": "orchestrator",
+            "target": "implementation-a",
+            "kind": "forward",
+            "status": "active",
+        }
+        manifest["edges"].append(authored_edge)
+
+        first = build_snapshot(state, manifest, "wK")
+        second = build_snapshot(copy.deepcopy(state), manifest, "wK")
+        addition = next(
+            node for node in first["nodes"] if node["role"] == "Follow-up"
+        )
+        generated_edge = next(
+            edge for edge in first["edges"] if edge["target"] == addition["id"]
+        )
+        edge_ids = [edge["id"] for edge in first["edges"]]
+
+        self.assertEqual(first, second)
+        self.assertIn(authored_edge, first["edges"])
+        self.assertNotEqual(would_be_generated, generated_edge["id"])
+        self.assertEqual(len(edge_ids), len(set(edge_ids)))
+        assert_protocol_valid(self, first)
+
 
 class PublishingTests(unittest.TestCase):
     def test_synthetic_mode_publishes_without_manifest_file(self):
