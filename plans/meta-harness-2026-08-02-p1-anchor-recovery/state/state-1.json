@@ -1,0 +1,25 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "67ec076cefc6f67b9eb8efa793f00cd50a433438",
+  "candidate_tree": "9a8fa322842a93a8a79aeda85f0184a23ffed633",
+  "prior_scores": null,
+  "scores": {
+    "selected_ledger_p1_anchoring": 9,
+    "pane_isolation_no_below_p1": 9,
+    "launcher_lifecycle_reuse": 8,
+    "backward_compatibility": 8,
+    "full_integration_quality": 9
+  },
+  "weighted_composite": 8.6,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: the selected ledger's P1 binding is the single anchor for cold and reused-server pane creation, independent of the invoking pane",
+  "what_not_to_retry": [
+    "Do not run another iteration after SUCCESS",
+    "Do not modify the prior manifestless-viewer harness history",
+    "Do not rerun frozen baselines",
+    "Do not install, push, deliver, or operate live panes"
+  ],
+  "stop_condition": "SUCCESS"
+}

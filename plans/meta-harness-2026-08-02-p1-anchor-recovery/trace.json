@@ -1,0 +1,77 @@
+{
+  "id": "20260802-p1-anchor-recovery-integration-g3",
+  "pipeline": "adversarial-dev",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "trace_kind": "run",
+  "generated": "2026-08-02T07:49:49Z",
+  "plan_dir": "plans/meta-harness-2026-08-02-p1-anchor-recovery",
+  "plan_group_key": "meta-harness-2026-08-02-p1-anchor-recovery",
+  "dedupe_key": "meta-harness-2026-08-02-p1-anchor-recovery",
+  "feedback_sources": [
+    "feedback/iter-1.json"
+  ],
+  "sprints": {
+    "total": 1,
+    "iterations_observed": 1
+  },
+  "routed_inputs": [
+    {
+      "source": "P6",
+      "generation": 2,
+      "finding_id": "p6-right-of-p1-anchor",
+      "failure_class": "implementation",
+      "targeted_criteria": [
+        "selected_ledger_p1_anchoring",
+        "pane_isolation_no_below_p1"
+      ],
+      "status": "resolved"
+    }
+  ],
+  "retries": [],
+  "evaluator_scores": {
+    "selected_ledger_p1_anchoring": [9],
+    "pane_isolation_no_below_p1": [9],
+    "launcher_lifecycle_reuse": [8],
+    "backward_compatibility": [8],
+    "full_integration_quality": [9]
+  },
+  "evaluator_scores_avg": {
+    "selected_ledger_p1_anchoring": 9,
+    "pane_isolation_no_below_p1": 9,
+    "launcher_lifecycle_reuse": 8,
+    "backward_compatibility": 8,
+    "full_integration_quality": 9
+  },
+  "criterion_evidence": {
+    "selected_ledger_p1_anchoring": ["feedback/iter-1.json"],
+    "pane_isolation_no_below_p1": ["feedback/iter-1.json"],
+    "launcher_lifecycle_reuse": ["feedback/iter-1.json"],
+    "backward_compatibility": ["feedback/iter-1.json"],
+    "full_integration_quality": ["feedback/iter-1.json"]
+  },
+  "owner_metrics": {},
+  "friction_summary": {
+    "highest_retry_skill": null,
+    "highest_retry_executor": null,
+    "highest_learning_owner": null,
+    "lowest_avg_criterion": "launcher_lifecycle_reuse",
+    "total_retries": 0,
+    "crystallize_eligible_retries": 0,
+    "retry_failure_evidence_missing": 0,
+    "unknown_learning_owner_count": 0,
+    "exclude_from_crystallize": false,
+    "dedupe_key": "meta-harness-2026-08-02-p1-anchor-recovery"
+  },
+  "environment_friction": [
+    "No local node_modules; reused the identical source dependency tree through a temporary symlink without installation"
+  ],
+  "outcome": "success",
+  "outcome_detail": {
+    "exit_code": "SUCCESS",
+    "normalized_outcome": "success",
+    "best_iteration": 1,
+    "composite_trajectory": [{"iter": 1, "composite": 8.6}],
+    "total_iterations": 1
+  }
+}

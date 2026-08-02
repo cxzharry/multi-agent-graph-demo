@@ -1,0 +1,50 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "DELIVER",
+  "locked": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "orchestration_mode": "local_controller",
+  "criteria": [
+    {
+      "id": "selected_ledger_p1_anchoring",
+      "description": "Every new viewer rail is anchored to the P1 pane bound by the selected ledger",
+      "weight": 1
+    },
+    {
+      "id": "pane_isolation_no_below_p1",
+      "description": "Viewer panes stay isolated, preserve focus, and never place a viewer process below P1",
+      "weight": 1
+    },
+    {
+      "id": "launcher_lifecycle_reuse",
+      "description": "Exact reuse, replacement, locking, and concurrent launch behavior remain correct",
+      "weight": 1
+    },
+    {
+      "id": "backward_compatibility",
+      "description": "Manifest selection, workspace isolation, publisher modes, and prior launcher behavior remain compatible",
+      "weight": 1
+    },
+    {
+      "id": "full_integration_quality",
+      "description": "Publisher tests, launcher tests, frontend tests, production build, browser smoke, and diff check pass",
+      "weight": 1
+    }
+  ],
+  "routed_input": {
+    "source": "P6",
+    "generation": 2,
+    "finding_id": "p6-right-of-p1-anchor"
+  },
+  "prior_harness_audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+  "frozen_comparison": {
+    "compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false
+  }
+}

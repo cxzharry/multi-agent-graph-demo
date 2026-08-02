@@ -1,0 +1,60 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.6,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 8.6
+    }
+  ],
+  "final_scores": {
+    "selected_ledger_p1_anchoring": 9,
+    "pane_isolation_no_below_p1": 9,
+    "launcher_lifecycle_reuse": 8,
+    "backward_compatibility": 8,
+    "full_integration_quality": 9
+  },
+  "routed_inputs": [
+    {
+      "source": "P6",
+      "generation": 2,
+      "finding_id": "p6-right-of-p1-anchor",
+      "status": "resolved"
+    }
+  ],
+  "product_findings": [],
+  "product_corrections": [
+    {
+      "accepted_commit": "277e360e31a51594149f020280be6b27b7909078",
+      "integrated_commit": "67ec076cefc6f67b9eb8efa793f00cd50a433438",
+      "summary": "Anchor viewer rail creation to the selected ledger's P1 pane"
+    }
+  ],
+  "prior_harness": {
+    "path": "plans/meta-harness-2026-08-02-manifestless-viewer",
+    "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+    "modified": false
+  },
+  "frozen_baselines": {
+    "compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted_in_plan_dir",
+    "path": "trace.json",
+    "note": "The trace is kept with the new follow-on artifacts so only this directory is committed."
+  },
+  "completed_at_utc": "2026-08-02T07:49:49Z"
+}

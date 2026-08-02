@@ -1,0 +1,101 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "67ec076cefc6f67b9eb8efa793f00cd50a433438",
+  "candidate_tree": "9a8fa322842a93a8a79aeda85f0184a23ffed633",
+  "passed": true,
+  "weighted_composite": 8.6,
+  "scores": {
+    "selected_ledger_p1_anchoring": {
+      "score": 9,
+      "evidence": "Launcher tests invoke from a non-P1 pane and assert that a cold server split anchors to the selected controller P1; the reused-server path also anchors a missing publisher to the selected P1. A missing P1 binding fails before Herdr calls."
+    },
+    "pane_isolation_no_below_p1": {
+      "score": 9,
+      "evidence": "The cold path asserts an exact right split from P1 followed by a down split from the new server, both with --no-focus. The reused-server path asserts a right split from P1, and the launcher contains no pane-close operation."
+    },
+    "launcher_lifecycle_reuse": {
+      "score": 8,
+      "evidence": "All 31 launcher tests passed, covering exact publisher identity, topology-mode replacement, workspace locking, bounded Herdr calls, stale process discovery, and concurrent duplicate prevention."
+    },
+    "backward_compatibility": {
+      "score": 8,
+      "evidence": "Manifest precedence and validation, synthetic/custom modes, workspace isolation, exact readiness, URL encoding, publisher projection, and frontend protocol behavior remain green."
+    },
+    "full_integration_quality": {
+      "score": 9,
+      "evidence": "Publisher 29 tests, launcher 31 tests, Vitest 35 tests, TypeScript/Vite production build, browser smoke, and git diff --check all passed. Browser smoke reported scale 1.034 and no error."
+    }
+  },
+  "criterion_evidence": {
+    "selected_ledger_p1_anchoring": [
+      "test_cold_start_from_non_p1_pane_anchors_selected_controller_p1",
+      "test_reused_server_from_non_p1_pane_anchors_unique_controller_p1",
+      "test_launch_rejects_selected_state_without_p1_pane_binding"
+    ],
+    "pane_isolation_no_below_p1": [
+      "server split: selected P1, direction right, ratio 0.32, no-focus",
+      "publisher split: new server, direction down, ratio 0.5, no-focus",
+      "reused server: publisher split right of selected P1"
+    ],
+    "launcher_lifecycle_reuse": [
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 31 passed"
+    ],
+    "backward_compatibility": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 29 passed",
+      "npm test -- --run: 35 passed"
+    ],
+    "full_integration_quality": [
+      "npm run build: pass",
+      "node tests/browser-smoke.mjs: pass",
+      "git diff --check: pass"
+    ]
+  },
+  "routed_input": {
+    "source": "P6",
+    "generation": 2,
+    "finding_id": "p6-right-of-p1-anchor",
+    "status": "resolved"
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "29 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "31 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 35 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Browser smoke passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "dependency_reuse": {
+    "installed": false,
+    "package_files_identical": true,
+    "method": "temporary source node_modules symlink removed by shell trap"
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

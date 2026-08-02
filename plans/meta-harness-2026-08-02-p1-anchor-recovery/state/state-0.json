@@ -1,0 +1,31 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 owns the single accepted launcher correction; P6 is the routed finding source",
+  "candidate_commit": "67ec076cefc6f67b9eb8efa793f00cd50a433438",
+  "candidate_tree": "9a8fa322842a93a8a79aeda85f0184a23ffed633",
+  "routed_input": {
+    "source": "P6",
+    "generation": 2,
+    "finding_id": "p6-right-of-p1-anchor",
+    "failure_class": "implementation",
+    "expected": "Pane creation anchors to the selected ledger's P1 pane",
+    "actual": "The launcher anchored new panes to the invoking pane even when another pane invoked the selected ledger"
+  },
+  "prior_scores": null,
+  "failure_class": null,
+  "targeted_criteria": [
+    "selected_ledger_p1_anchoring",
+    "pane_isolation_no_below_p1"
+  ],
+  "hypothesis": "Resolving P1 from the selected ledger before launcher discovery makes both cold and reused-server splits deterministic and isolated",
+  "what_not_to_retry": [
+    "Do not anchor viewer panes to the invoking non-P1 pane",
+    "Do not operate live panes during this evaluation",
+    "Do not modify the prior manifestless-viewer harness history",
+    "Do not rerun frozen baselines or install dependencies"
+  ]
+}
