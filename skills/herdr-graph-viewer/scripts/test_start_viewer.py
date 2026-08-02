@@ -143,7 +143,13 @@ class StartViewerTest(unittest.TestCase):
             herdr.assert_not_called()
             probe.assert_not_called()
 
-    def assert_empty_query_fails_before_mutation(self, empty_query: str) -> None:
+    def assert_query_output_fails_before_mutation(
+        self,
+        query: str,
+        query_output: str = "",
+        *,
+        cold_server: bool = False,
+    ) -> None:
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -166,23 +172,21 @@ class StartViewerTest(unittest.TestCase):
                 commands.append(args)
                 if args[:2] == ("pane", "list"):
                     stdout = (
-                        ""
-                        if empty_query == "pane-list"
+                        query_output
+                        if query == "pane-list"
                         else json.dumps(
                             {"result": {"panes": [{"pane_id": "publisher"}]}}
                         )
                     )
                 elif args[:2] == ("pane", "process-info"):
-                    stdout = ""
+                    stdout = query_output
                 elif args[:2] == ("pane", "split"):
                     stdout = json.dumps(
                         {"result": {"pane": {"pane_id": "new-publisher"}}}
                     )
-                elif args[:2] in {
-                    ("pane", "rename"),
-                    ("pane", "run"),
-                    ("pane", "send-keys"),
-                }:
+                elif args[:2] == ("pane", "rename"):
+                    stdout = json.dumps({"result": {}})
+                elif args[:2] in {("pane", "run"), ("pane", "send-keys")}:
                     stdout = ""
                 else:
                     raise AssertionError(args)
@@ -196,6 +200,7 @@ class StartViewerTest(unittest.TestCase):
                 port_start=4173,
                 port_end=4173,
             )
+            probe_results = iter(("free", "viewer") if cold_server else ("viewer",))
 
             with mock.patch.dict(
                 os.environ,
@@ -208,7 +213,7 @@ class StartViewerTest(unittest.TestCase):
             ), mock.patch.object(
                 launcher.subprocess, "run", side_effect=fake_run
             ), mock.patch.object(
-                launcher, "probe_viewer", return_value="viewer"
+                launcher, "probe_viewer", side_effect=lambda _port: next(probe_results)
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
@@ -223,7 +228,7 @@ class StartViewerTest(unittest.TestCase):
 
             self.assertEqual(raised.exception.code, "herdr_error")
             expected = [("pane", "list", "--workspace", "w1")]
-            if empty_query == "process-info":
+            if query == "process-info":
                 expected.append(("pane", "process-info", "--pane", "publisher"))
             self.assertEqual(commands, expected)
 
@@ -908,10 +913,30 @@ class StartViewerTest(unittest.TestCase):
         self.assertEqual(response, expected)
 
     def test_empty_pane_list_fails_before_pane_mutation(self):
-        self.assert_empty_query_fails_before_mutation("pane-list")
+        self.assert_query_output_fails_before_mutation("pane-list")
 
     def test_empty_process_info_fails_before_pane_mutation(self):
-        self.assert_empty_query_fails_before_mutation("process-info")
+        self.assert_query_output_fails_before_mutation("process-info")
+
+    def test_cold_server_empty_pane_list_fails_before_pane_mutation(self):
+        self.assert_query_output_fails_before_mutation(
+            "pane-list", cold_server=True
+        )
+
+    def test_cold_server_malformed_pane_list_fails_before_pane_mutation(self):
+        self.assert_query_output_fails_before_mutation(
+            "pane-list", "not-json", cold_server=True
+        )
+
+    def test_cold_server_empty_process_info_fails_before_pane_mutation(self):
+        self.assert_query_output_fails_before_mutation(
+            "process-info", cold_server=True
+        )
+
+    def test_cold_server_malformed_process_info_fails_before_pane_mutation(self):
+        self.assert_query_output_fails_before_mutation(
+            "process-info", "not-json", cold_server=True
+        )
 
     def test_split_pane_still_requires_pane_result(self):
         launcher = self.require_launcher()

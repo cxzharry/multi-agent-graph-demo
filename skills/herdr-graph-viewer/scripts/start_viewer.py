@@ -632,6 +632,15 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
         scope_id = f"herdr:{workspace_id}"
         port, server_reused = select_port(probe_viewer, args.port_start, args.port_end)
         server_pane: str | None = None
+        endpoint = f"http://127.0.0.1:{port}/api/snapshots"
+        publisher_pane = _find_publisher(workspace_id, selected.path, selection, endpoint)
+        publisher_reused = publisher_pane is not None
+        replace_current = False
+        if publisher_pane is None:
+            publisher_pane = _find_publisher_for_state(
+                workspace_id, selected.path, endpoint
+            )
+            replace_current = publisher_pane is not None
 
         if not server_reused:
             server_pane = _split_pane(
@@ -660,17 +669,9 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             _run_in_pane(server_pane, server_command)
             _wait_for_viewer(port)
 
-        endpoint = f"http://127.0.0.1:{port}/api/snapshots"
-        publisher_pane = _find_publisher(workspace_id, selected.path, selection, endpoint)
-        publisher_reused = publisher_pane is not None
-        replace_current = False
-        if publisher_pane is None:
-            publisher_pane = _find_publisher_for_state(
-                workspace_id, selected.path, endpoint
-            )
-            if publisher_pane is not None:
+        if not publisher_reused:
+            if replace_current:
                 _herdr("pane", "send-keys", publisher_pane, "ctrl+c")
-                replace_current = True
             else:
                 anchor_pane = server_pane or p1_pane
                 publisher_pane = _split_pane(
