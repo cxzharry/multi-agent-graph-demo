@@ -230,6 +230,7 @@ class StartViewerTest(unittest.TestCase):
                 launcher,
                 "_snapshot",
                 return_value={
+                    "spaceName": "herdr-orchestrator",
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
@@ -428,6 +429,7 @@ class StartViewerTest(unittest.TestCase):
                 launcher,
                 "_snapshot",
                 return_value={
+                    "spaceName": "herdr-orchestrator",
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 3,
@@ -763,20 +765,45 @@ class StartViewerTest(unittest.TestCase):
             )
         )
 
-    def test_wait_for_snapshot_requires_exact_revision_sequence(self):
+    def test_wait_for_snapshot_requires_exact_revision_and_space_name(self):
         launcher = self.require_launcher()
         snapshots = iter(
             [
-                {"scopeId": "herdr:w1", "runId": "run-1", "sequence": 2},
+                {
+                    "spaceName": "herdr-orchestrator",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 2,
+                },
                 {"scopeId": "herdr:w1", "runId": "run-1", "sequence": 3},
+                {
+                    "spaceName": "car-edge",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 3,
+                },
+                {
+                    "spaceName": "herdr-orchestrator",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 3,
+                },
             ]
         )
         with mock.patch.object(launcher, "_snapshot", side_effect=lambda *_: next(snapshots)):
-            found = launcher._wait_for_snapshot(4173, "herdr:w1", "run-1", 3, timeout=1)
+            found = launcher._wait_for_snapshot(
+                4173,
+                "herdr:w1",
+                "run-1",
+                3,
+                "herdr-orchestrator",
+                timeout=1,
+            )
 
         self.assertEqual(found["sequence"], 3)
+        self.assertEqual(found["spaceName"], "herdr-orchestrator")
 
-    def test_viewer_probe_requires_health_fingerprint(self):
+    def test_viewer_probe_requires_space_name_summary_capability(self):
         launcher = self.require_launcher()
 
         class Response:
@@ -801,8 +828,21 @@ class StartViewerTest(unittest.TestCase):
                 }
             ),
         ) as opened:
-            self.assertEqual(launcher.probe_viewer(4173), "viewer")
+            self.assertEqual(launcher.probe_viewer(4173), "occupied")
             self.assertIn("/api/health", opened.call_args.args[0])
+
+        with mock.patch.object(
+            launcher.urllib.request,
+            "urlopen",
+            return_value=response_for(
+                {
+                    "service": "herdr-role-graph-viewer",
+                    "schemaVersion": "role-graph/v1",
+                    "capabilities": ["space-name-summary"],
+                }
+            ),
+        ):
+            self.assertEqual(launcher.probe_viewer(4173), "viewer")
 
         with mock.patch.object(
             launcher.urllib.request,
@@ -810,6 +850,36 @@ class StartViewerTest(unittest.TestCase):
             return_value=response_for([{"id": "graph"}]),
         ):
             self.assertEqual(launcher.probe_viewer(4173), "occupied")
+
+    def test_legacy_viewer_is_skipped_for_next_free_port(self):
+        launcher = self.require_launcher()
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+        response = Response()
+        response.read = lambda: json.dumps(
+            {
+                "service": "herdr-role-graph-viewer",
+                "schemaVersion": "role-graph/v1",
+            }
+        ).encode("utf-8")
+
+        def probe(port):
+            if port == 4174:
+                return "free"
+            return launcher.probe_viewer(port)
+
+        with mock.patch.object(
+            launcher.urllib.request, "urlopen", return_value=response
+        ):
+            selected = launcher.select_port(probe, 4173, 4174)
+
+        self.assertEqual(selected, (4174, False))
 
     def test_find_publisher_retries_stale_pane_and_skips_missing_process_info(self):
         launcher = self.require_launcher()
@@ -943,6 +1013,7 @@ class StartViewerTest(unittest.TestCase):
                 launcher,
                 "_snapshot",
                 return_value={
+                    "spaceName": "herdr-orchestrator",
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
@@ -1156,7 +1227,12 @@ class StartViewerTest(unittest.TestCase):
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
-                return_value={"scopeId": "herdr:w1", "runId": "current-run", "sequence": 8},
+                return_value={
+                    "spaceName": "herdr-orchestrator",
+                    "scopeId": "herdr:w1",
+                    "runId": "current-run",
+                    "sequence": 8,
+                },
             ):
                 result = launcher.launch(args)
 
@@ -1261,6 +1337,7 @@ class StartViewerTest(unittest.TestCase):
                 launcher,
                 "_snapshot",
                 return_value={
+                    "spaceName": "herdr-orchestrator",
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
@@ -1331,6 +1408,7 @@ class StartViewerTest(unittest.TestCase):
                 launcher,
                 "_snapshot",
                 return_value={
+                    "spaceName": "herdr-orchestrator",
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
@@ -1446,6 +1524,7 @@ class StartViewerTest(unittest.TestCase):
                 launcher,
                 "_snapshot",
                 return_value={
+                    "spaceName": "herdr-orchestrator",
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,

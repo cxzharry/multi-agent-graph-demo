@@ -129,9 +129,12 @@ def probe_viewer(port: int) -> str:
             data = json.load(response)
         if not isinstance(data, dict):
             return "occupied"
+        capabilities = data.get("capabilities")
         if (
             data.get("service") == "herdr-role-graph-viewer"
             and data.get("schemaVersion") == "role-graph/v1"
+            and isinstance(capabilities, list)
+            and "space-name-summary" in capabilities
         ):
             return "viewer"
         return "occupied"
@@ -380,6 +383,7 @@ def _wait_for_snapshot(
     scope_id: str,
     run_id: str,
     expected_sequence: int,
+    expected_space_name: str,
     timeout: float = 20.0,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
@@ -390,12 +394,16 @@ def _wait_for_snapshot(
             and value.get("scopeId") == scope_id
             and value.get("runId") == run_id
             and value.get("sequence") == expected_sequence
+            and value.get("spaceName") == expected_space_name
         ):
             return value
         time.sleep(0.25)
     raise LauncherError(
         "publisher_start_failed",
-        f"No snapshot published for {scope_id}/{run_id} at sequence {expected_sequence}",
+        (
+            f"No snapshot published for {scope_id}/{run_id} at sequence "
+            f"{expected_sequence} with spaceName {expected_space_name!r}"
+        ),
     )
 
 
@@ -747,7 +755,9 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             )
             _run_in_pane(publisher_pane, command)
 
-        snapshot = _wait_for_snapshot(port, scope_id, selected.run_id, revision)
+        snapshot = _wait_for_snapshot(
+            port, scope_id, selected.run_id, revision, space_name
+        )
     return {
         "status": "ready",
         "workspace_id": workspace_id,
