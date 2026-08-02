@@ -32,6 +32,16 @@ class StartViewerTest(unittest.TestCase):
         self.assertIsNotNone(self.launcher, "start_viewer.py is missing")
         return self.launcher
 
+    def workspace_list(
+        self, workspace: str = "w1", label: str = "herdr-orchestrator"
+    ):
+        return {
+            "result": {
+                "type": "workspace_list",
+                "workspaces": [{"workspace_id": workspace, "label": label}],
+            }
+        }
+
     def write_state(
         self,
         root: Path,
@@ -170,7 +180,9 @@ class StartViewerTest(unittest.TestCase):
             def fake_run(command, **_kwargs):
                 args = tuple(command[1:])
                 commands.append(args)
-                if args[:2] == ("pane", "list"):
+                if args[:2] == ("workspace", "list"):
+                    stdout = json.dumps(self.workspace_list())
+                elif args[:2] == ("pane", "list"):
                     stdout = (
                         query_output
                         if query == "pane-list"
@@ -227,7 +239,10 @@ class StartViewerTest(unittest.TestCase):
                     launcher.launch(args)
 
             self.assertEqual(raised.exception.code, "herdr_error")
-            expected = [("pane", "list", "--workspace", "w1")]
+            expected = [
+                ("workspace", "list"),
+                ("pane", "list", "--workspace", "w1"),
+            ]
             if query == "process-info":
                 expected.append(("pane", "process-info", "--pane", "publisher"))
             self.assertEqual(commands, expected)
@@ -250,6 +265,40 @@ class StartViewerTest(unittest.TestCase):
 
             self.assertEqual(selected.path, current.resolve())
             self.assertEqual(selected.run_id, "current-run")
+
+    def test_resolves_exact_workspace_label(self):
+        launcher = self.require_launcher()
+        response = {
+            "result": {
+                "type": "workspace_list",
+                "workspaces": [
+                    {"workspace_id": "w2", "label": "car-edge"},
+                    {"workspace_id": "w1", "label": "herdr-orchestrator"},
+                ],
+            }
+        }
+
+        with mock.patch.object(launcher, "_herdr", return_value=response) as herdr:
+            space_name = launcher._resolve_space_name("w1")
+
+        self.assertEqual(space_name, "herdr-orchestrator")
+        herdr.assert_called_once_with("workspace", "list")
+
+    def test_rejects_missing_or_blank_workspace_label(self):
+        launcher = self.require_launcher()
+        responses = [
+            {"result": {"type": "workspace_list", "workspaces": []}},
+            self.workspace_list(label="  "),
+        ]
+
+        for response in responses:
+            with self.subTest(response=response), mock.patch.object(
+                launcher, "_herdr", return_value=response
+            ):
+                with self.assertRaises(launcher.LauncherError) as raised:
+                    launcher._resolve_space_name("w1")
+
+                self.assertEqual(raised.exception.code, "workspace_selection_error")
 
     def test_refuses_to_guess_between_multiple_runs(self):
         launcher = self.require_launcher()
@@ -326,6 +375,70 @@ class StartViewerTest(unittest.TestCase):
             self.assertIn("no usable P1 pane binding", str(raised.exception))
             herdr.assert_not_called()
 
+    def test_blank_workspace_label_fails_before_pane_mutation(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            state = self.write_state(
+                root, "current", workspace="w1", pane="w1:p1", run_id="current-run"
+            )
+            mutations: list[tuple[str, ...]] = []
+
+            def fake_herdr(*args):
+                if args[:2] == ("workspace", "list"):
+                    return self.workspace_list(label=" ")
+                if args[:2] == ("pane", "list"):
+                    return {"result": {"panes": []}}
+                if args[:2] in {
+                    ("pane", "split"),
+                    ("pane", "rename"),
+                    ("pane", "run"),
+                    ("pane", "send-keys"),
+                }:
+                    mutations.append(args)
+                    return {"result": {"pane": {"pane_id": "publisher"}}}
+                raise AssertionError(args)
+
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(
+                launcher, "_herdr", side_effect=fake_herdr
+            ), mock.patch.object(
+                launcher, "probe_viewer", return_value="viewer"
+            ), mock.patch.object(
+                launcher,
+                "_snapshot",
+                return_value={
+                    "scopeId": "herdr:w1",
+                    "runId": "current-run",
+                    "sequence": 3,
+                },
+            ):
+                with self.assertRaises(launcher.LauncherError) as raised:
+                    launcher.launch(args)
+
+            self.assertEqual(raised.exception.code, "workspace_selection_error")
+            self.assertEqual(mutations, [])
+
     def test_port_selection_reuses_viewer_and_skips_unrelated_service(self):
         launcher = self.require_launcher()
         probes = {4173: "occupied", 4174: "viewer", 4175: "free"}
@@ -353,7 +466,8 @@ class StartViewerTest(unittest.TestCase):
                     "cmdline": (
                         "python3 -B adapters/herdr/publisher.py "
                         f"--state {target} --manifest {manifest} "
-                        f"--workspace-id w1 --endpoint {endpoint} --watch"
+                        "--workspace-id w1 --space-name herdr-orchestrator "
+                        f"--endpoint {endpoint} --watch"
                     )
                 }
             ]
@@ -365,6 +479,7 @@ class StartViewerTest(unittest.TestCase):
                 target,
                 launcher.ManifestSelection("custom", Path(manifest)),
                 "w1",
+                "herdr-orchestrator",
                 endpoint,
                 True,
             )
@@ -375,6 +490,7 @@ class StartViewerTest(unittest.TestCase):
                 "/tmp/other/workspace-state.json",
                 launcher.ManifestSelection("custom", Path(manifest)),
                 "w1",
+                "herdr-orchestrator",
                 endpoint,
                 True,
             )
@@ -546,6 +662,7 @@ class StartViewerTest(unittest.TestCase):
         exact = (
             "python3 -B adapters/herdr/publisher.py "
             f"--state {target} --manifest {manifest} --workspace-id {workspace} "
+            "--space-name herdr-orchestrator "
             f"--endpoint {endpoint} --watch --interval 2"
         )
         process = {"foreground_processes": [{"cmdline": exact}]}
@@ -556,6 +673,7 @@ class StartViewerTest(unittest.TestCase):
                 target,
                 launcher.ManifestSelection("custom", Path(manifest)),
                 workspace,
+                "herdr-orchestrator",
                 endpoint,
                 True,
             )
@@ -566,6 +684,7 @@ class StartViewerTest(unittest.TestCase):
                 "/tmp/current/workspace-state.json.bak",
                 launcher.ManifestSelection("custom", Path(manifest)),
                 workspace,
+                "herdr-orchestrator",
                 endpoint,
                 True,
             )
@@ -576,6 +695,7 @@ class StartViewerTest(unittest.TestCase):
                 target,
                 launcher.ManifestSelection("custom", Path(manifest)),
                 "w10",
+                "herdr-orchestrator",
                 endpoint,
                 True,
             )
@@ -586,7 +706,19 @@ class StartViewerTest(unittest.TestCase):
                 target,
                 launcher.ManifestSelection("custom", Path(manifest)),
                 workspace,
+                "herdr-orchestrator",
                 endpoint + "/other",
+                True,
+            )
+        )
+        self.assertFalse(
+            launcher.publisher_matches(
+                process,
+                target,
+                launcher.ManifestSelection("custom", Path(manifest)),
+                workspace,
+                "car-edge",
+                endpoint,
                 True,
             )
         )
@@ -601,6 +733,7 @@ class StartViewerTest(unittest.TestCase):
                     "cmdline": (
                         "python3 -B adapters/herdr/publisher.py "
                         f"--state {target} --synthesize --workspace-id w1 "
+                        "--space-name herdr-orchestrator "
                         f"--endpoint {endpoint} --watch"
                     )
                 }
@@ -613,6 +746,7 @@ class StartViewerTest(unittest.TestCase):
                 target,
                 launcher.ManifestSelection("synthetic", None),
                 "w1",
+                "herdr-orchestrator",
                 endpoint,
                 True,
             )
@@ -623,6 +757,7 @@ class StartViewerTest(unittest.TestCase):
                 target,
                 launcher.ManifestSelection("custom", Path("/tmp/manifest.json")),
                 "w1",
+                "herdr-orchestrator",
                 endpoint,
                 True,
             )
@@ -709,6 +844,7 @@ class StartViewerTest(unittest.TestCase):
                                         "python3 -B adapters/herdr/publisher.py "
                                         f"--state {target} --manifest {manifest} "
                                         "--workspace-id w1 "
+                                        "--space-name herdr-orchestrator "
                                         f"--endpoint {endpoint} --watch --interval 2"
                                     )
                                 }
@@ -722,6 +858,7 @@ class StartViewerTest(unittest.TestCase):
             self.assertEqual(
                 launcher._find_publisher(
                     "w1",
+                    "herdr-orchestrator",
                     Path(target),
                     launcher.ManifestSelection("custom", Path(manifest)),
                     endpoint,
@@ -731,7 +868,7 @@ class StartViewerTest(unittest.TestCase):
 
         self.assertIn(("pane", "process-info", "--pane", "stale"), calls)
 
-    def test_mode_switch_replaces_publisher_in_same_ordinary_pane(self):
+    def test_space_name_mismatch_replaces_publisher_in_same_ordinary_pane(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -753,13 +890,16 @@ class StartViewerTest(unittest.TestCase):
             endpoint = "http://127.0.0.1:4173/api/snapshots"
             old_command = (
                 "python3 -B adapters/herdr/publisher.py "
-                f"--state {state.resolve()} --synthesize --workspace-id w1 "
+                f"--state {state.resolve()} --manifest {manifest.resolve()} "
+                "--workspace-id w1 --space-name old-space "
                 f"--endpoint {endpoint} --watch --interval 2"
             )
             calls: list[tuple[str, ...]] = []
 
             def fake_herdr(*args):
                 calls.append(args)
+                if args[:2] == ("workspace", "list"):
+                    return self.workspace_list()
                 if args[:2] == ("pane", "list"):
                     return {
                         "result": {
@@ -815,6 +955,7 @@ class StartViewerTest(unittest.TestCase):
             self.assertEqual(len(replacement), 1)
             self.assertEqual(replacement[0][2], "publisher")
             self.assertIn("--manifest " + str(manifest.resolve()), replacement[0][3])
+            self.assertIn("--space-name herdr-orchestrator", replacement[0][3])
             self.assertIn("--replace-current", replacement[0][3].split())
             self.assertFalse(any(call[:2] == ("pane", "split") for call in calls))
             self.assertFalse(result["publisher"]["reused"])
@@ -826,6 +967,7 @@ class StartViewerTest(unittest.TestCase):
         command = (
             "python3 -B adapters/herdr/publisher.py "
             f"--state {target} --synthesize --workspace-id w1 "
+            "--space-name herdr-orchestrator "
             f"--endpoint {endpoint} --watch"
         )
         calls: list[tuple[str, ...]] = []
@@ -977,6 +1119,8 @@ class StartViewerTest(unittest.TestCase):
             splits: list[tuple[str, ...]] = []
 
             def fake_herdr(*args):
+                if args[:2] == ("workspace", "list"):
+                    return self.workspace_list()
                 if args[:2] == ("pane", "list"):
                     return {"result": {"panes": []}}
                 if args[:2] == ("pane", "split"):
@@ -1017,6 +1161,7 @@ class StartViewerTest(unittest.TestCase):
                 result = launcher.launch(args)
 
             self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["space_name"], "herdr-orchestrator")
             self.assertEqual(result.get("mode"), "custom")
             self.assertEqual(result["sequence"], 8)
             self.assertEqual(
@@ -1058,6 +1203,7 @@ class StartViewerTest(unittest.TestCase):
             publisher_command = commands["pane-2"]
             self.assertIn("--manifest " + str(manifest.resolve()), publisher_command)
             self.assertIn("--workspace-id w1", publisher_command)
+            self.assertIn("--space-name herdr-orchestrator", publisher_command)
             self.assertNotIn("--replace-current", publisher_command.split())
 
     def test_manifestless_launch_emits_synthetic_mode_and_null_manifest(self):
@@ -1079,6 +1225,8 @@ class StartViewerTest(unittest.TestCase):
             commands: list[str] = []
 
             def fake_herdr(*args):
+                if args[:2] == ("workspace", "list"):
+                    return self.workspace_list()
                 if args[:2] == ("pane", "list"):
                     return {"result": {"panes": []}}
                 if args[:2] == ("pane", "split"):
@@ -1149,6 +1297,8 @@ class StartViewerTest(unittest.TestCase):
             splits: list[tuple[str, ...]] = []
 
             def fake_herdr(*args):
+                if args[:2] == ("workspace", "list"):
+                    return self.workspace_list()
                 if args[:2] == ("pane", "list"):
                     return {"result": {"panes": []}}
                 if args[:2] == ("pane", "split"):
@@ -1232,6 +1382,8 @@ class StartViewerTest(unittest.TestCase):
 
             def fake_herdr(*args):
                 with lock:
+                    if args[:2] == ("workspace", "list"):
+                        return self.workspace_list()
                     if args[:2] == ("pane", "list"):
                         panes = [{"pane_id": pane_id} for pane_id in commands]
                         return {"result": {"panes": panes}}

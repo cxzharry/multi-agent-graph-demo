@@ -189,7 +189,7 @@ def _publisher_argvs(process_info: dict[str, Any]) -> Iterator[list[str]]:
             continue
 
 
-def _publisher_common_matches(
+def _publisher_state_matches(
     argv: list[str],
     state_path: str,
     workspace_id: str,
@@ -205,17 +205,31 @@ def _publisher_common_matches(
     )
 
 
+def _publisher_common_matches(
+    argv: list[str],
+    state_path: str,
+    workspace_id: str,
+    space_name: str,
+    endpoint: str,
+    watch: bool,
+) -> bool:
+    return _publisher_state_matches(
+        argv, state_path, workspace_id, endpoint, watch
+    ) and _argv_value(argv, "--space-name") == space_name
+
+
 def publisher_matches(
     process_info: dict[str, Any],
     state_path: str,
     selection: ManifestSelection,
     workspace_id: str,
+    space_name: str,
     endpoint: str,
     watch: bool,
 ) -> bool:
     for argv in _publisher_argvs(process_info):
         if not _publisher_common_matches(
-            argv, state_path, workspace_id, endpoint, watch
+            argv, state_path, workspace_id, space_name, endpoint, watch
         ):
             continue
         manifest_path = _argv_value(argv, "--manifest")
@@ -240,7 +254,7 @@ def _publisher_matches_state(
     watch: bool,
 ) -> bool:
     for argv in _publisher_argvs(process_info):
-        if not _publisher_common_matches(
+        if not _publisher_state_matches(
             argv, state_path, workspace_id, endpoint, watch
         ):
             continue
@@ -286,6 +300,25 @@ def _herdr(*args: str) -> dict[str, Any]:
 
 def _result_value(response: dict[str, Any], key: str) -> Any:
     return response.get("result", {}).get(key)
+
+
+def _resolve_space_name(workspace_id: str) -> str:
+    workspaces = _result_value(_herdr("workspace", "list"), "workspaces")
+    if isinstance(workspaces, list):
+        for workspace in workspaces:
+            if (
+                not isinstance(workspace, dict)
+                or workspace.get("workspace_id") != workspace_id
+            ):
+                continue
+            label = workspace.get("label")
+            if isinstance(label, str) and label.strip():
+                return label
+            break
+    raise LauncherError(
+        "workspace_selection_error",
+        f"Herdr workspace {workspace_id!r} has no non-empty label",
+    )
 
 
 def _split_pane(
@@ -374,6 +407,7 @@ def _workspace_panes(workspace_id: str) -> list[dict[str, Any]]:
 
 def _find_publisher(
     workspace_id: str,
+    space_name: str,
     state_path: Path,
     selection: ManifestSelection,
     endpoint: str,
@@ -401,6 +435,7 @@ def _find_publisher(
                 str(state_path),
                 selection,
                 workspace_id,
+                space_name,
                 endpoint,
                 True,
             ):
@@ -629,11 +664,14 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             raise LauncherError(
                 "invalid_state", f"State has no integer revision: {selected.path}"
             )
+        space_name = _resolve_space_name(workspace_id)
         scope_id = f"herdr:{workspace_id}"
         port, server_reused = select_port(probe_viewer, args.port_start, args.port_end)
         server_pane: str | None = None
         endpoint = f"http://127.0.0.1:{port}/api/snapshots"
-        publisher_pane = _find_publisher(workspace_id, selected.path, selection, endpoint)
+        publisher_pane = _find_publisher(
+            workspace_id, space_name, selected.path, selection, endpoint
+        )
         publisher_reused = publisher_pane is not None
         replace_current = False
         if publisher_pane is None:
@@ -698,6 +736,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     *(["--replace-current"] if replace_current else []),
                     "--workspace-id",
                     workspace_id,
+                    "--space-name",
+                    space_name,
                     "--endpoint",
                     endpoint,
                     "--watch",
@@ -711,6 +751,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "status": "ready",
         "workspace_id": workspace_id,
+        "space_name": space_name,
         "run_id": selected.run_id,
         "state": str(selected.path),
         "mode": selection.mode,
