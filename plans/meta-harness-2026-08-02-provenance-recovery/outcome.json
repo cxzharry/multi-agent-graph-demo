@@ -1,0 +1,63 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.8,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 8.8
+    }
+  ],
+  "final_scores": {
+    "provenance_keyed_hiding": 9,
+    "authored_auto_id_visibility": 9,
+    "synthetic_internal_readability": 9,
+    "retained_persona_time_identity_contracts": 9,
+    "retained_custom_layout_runtime_quality": 8
+  },
+  "routed_inputs": [
+    {
+      "source": "P6",
+      "finding_id": "p6-authored-auto-id-provenance",
+      "finding_receipt": "independent_review-g7.json",
+      "status": "resolved"
+    }
+  ],
+  "product_findings": [],
+  "product_corrections": [
+    {
+      "accepted_commit": "d6e42ca20d1f1d7b09a63739765d79a61681a29c",
+      "integrated_commit": "368cf74f71645578aa5ef2dbc6b9810c0bf75b25",
+      "summary": "Key synthetic display hiding to exact snapshot flow provenance so authored auto-shaped IDs and tasks remain visible"
+    }
+  ],
+  "prior_harnesses": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {"audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add", "modified": false},
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {"audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb", "modified": false},
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {"audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37", "modified": false},
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {"audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b", "modified": false},
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": {"audit_tree": "53189bc2bd72067cf169ee84906cc94e32fc0239", "modified": false},
+    "plans/meta-harness-2026-08-02-persona-readability-recovery": {"audit_tree": "01c03937108feeda155d0f2c464abcd80d82f01a", "modified": false}
+  },
+  "frozen_baselines": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted",
+    "path": "/Users/haido/.claude/traces/runs/20260802-provenance-recovery-integration-g8.json",
+    "generator": "/Users/haido/.agents/skills/meta-harness/scripts/extract-trace.py"
+  },
+  "completed_at_utc": "2026-08-02T10:04:21Z"
+}

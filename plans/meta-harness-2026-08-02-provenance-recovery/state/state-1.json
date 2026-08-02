@@ -1,0 +1,27 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "368cf74f71645578aa5ef2dbc6b9810c0bf75b25",
+  "candidate_tree": "90313cf2902098293ce17251d0abf394c9e10f91",
+  "prior_scores": null,
+  "scores": {
+    "provenance_keyed_hiding": 9,
+    "authored_auto_id_visibility": 9,
+    "synthetic_internal_readability": 9,
+    "retained_persona_time_identity_contracts": 9,
+    "retained_custom_layout_runtime_quality": 8
+  },
+  "weighted_composite": 8.8,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: exact auto-operational flow provenance separates synthetic and authored auto-shaped nodes while preserving persona readability and runtime contracts",
+  "what_not_to_retry": [
+    "Do not run another iteration after SUCCESS",
+    "Do not infer synthetic provenance from node ID shape or decoded text",
+    "Do not hide authored custom IDs or authored custom tasks",
+    "Do not expose synthetic generated internals",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, sync, push, deliver, modify Herdr Orchestrator, close panes, operate live panes, or self-review as P6"
+  ],
+  "stop_condition": "SUCCESS"
+}

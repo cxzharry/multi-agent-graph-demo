@@ -1,0 +1,33 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 owns exact integration and verification of one accepted provenance correction and does not perform P6 review",
+  "candidate_commit": "368cf74f71645578aa5ef2dbc6b9810c0bf75b25",
+  "candidate_tree": "90313cf2902098293ce17251d0abf394c9e10f91",
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-authored-auto-id-provenance",
+    "finding_receipt": "independent_review-g7.json",
+    "failure_class": "implementation",
+    "expected": "Only trustworthy snapshot provenance marks synthesized nodes for display hiding; authored IDs and tasks remain visible regardless of string shape",
+    "actual": "Generation 7 inferred generated provenance from auto-prefixed ID shape and could hide valid authored IDs and tasks"
+  },
+  "prior_scores": null,
+  "failure_class": null,
+  "targeted_criteria": [
+    "provenance_keyed_hiding",
+    "authored_auto_id_visibility",
+    "synthetic_internal_readability"
+  ],
+  "hypothesis": "Propagating exact auto-operational flow provenance into node display data separates synthetic and authored auto-shaped nodes without weakening persona readability",
+  "what_not_to_retry": [
+    "Do not infer synthetic provenance from node ID prefixes or decoded text",
+    "Do not hide authored custom IDs or authored custom task text",
+    "Do not expose generated auto-operational IDs or redundant synthetic lane-label tasks",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, sync, push, deliver, modify Herdr Orchestrator, close panes, operate live panes, or self-review as P6"
+  ]
+}

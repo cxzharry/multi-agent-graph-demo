@@ -1,0 +1,137 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "368cf74f71645578aa5ef2dbc6b9810c0bf75b25",
+  "candidate_tree": "90313cf2902098293ce17251d0abf394c9e10f91",
+  "passed": true,
+  "weighted_composite": 8.8,
+  "scores": {
+    "provenance_keyed_hiding": {
+      "score": 9,
+      "evidence": "The UI derives a synthetic display flag only from exact snapshot flowId auto-operational provenance and passes that flag into node data. RoleNode no longer treats an auto-prefixed ID as sufficient provenance."
+    },
+    "authored_auto_id_visibility": {
+      "score": 9,
+      "evidence": "Browser smoke publishes an authored-custom snapshot containing the same auto-hex ID and matching lane-label task as the synthetic fixture and proves both the full authored ID and task remain visible."
+    },
+    "synthetic_internal_readability": {
+      "score": 9,
+      "evidence": "Browser smoke selects the equivalent auto-operational snapshot and proves its generated auto ID and redundant generated task remain hidden while the Publisher role heading and exact compact P5 chip remain visible."
+    },
+    "retained_persona_time_identity_contracts": {
+      "score": 9,
+      "evidence": "The retained publisher and browser regressions continue to prove exact live lane-to-P mapping, meaningful deterministic generatedAt, seconds/ms/ISO local-clock equivalence without raw epochs, role-first headings, and accessible compact P chips."
+    },
+    "retained_custom_layout_runtime_quality": {
+      "score": 8,
+      "evidence": "Publisher 34 tests, launcher 41 tests, Vitest 37 tests, production build, browser smoke, and git diff --check all passed. Custom authored content, loop/top-down/straight-link layout, selection, live updates, launcher lifecycle, workspace isolation, no-close behavior, and all six prior harness subtree identities remain covered."
+    }
+  },
+  "criterion_evidence": {
+    "provenance_keyed_hiding": [
+      "src/main.tsx derives synthetic only from snapshot flowId === auto-operational",
+      "src/graph/RoleNode.tsx gates generated ID and task hiding on data.synthetic"
+    ],
+    "authored_auto_id_visibility": [
+      "browser authored-custom snapshot reuses the synthetic auto-hex ID and task pair",
+      "browser assertions require one role-task and one role-id with exact authored text"
+    ],
+    "synthetic_internal_readability": [
+      "browser auto-operational assertions require zero generated task and ID elements",
+      "browser assertions retain Publisher heading and P5 assignee chip"
+    ],
+    "retained_persona_time_identity_contracts": [
+      "publisher lane-to-P and deterministic mixed-time tests remain in the 34-test suite",
+      "browser seconds/ms/ISO and accessible compact-P assertions pass"
+    ],
+    "retained_custom_layout_runtime_quality": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 34 passed",
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 41 passed",
+      "npm test -- --run: 4 files and 37 tests passed",
+      "npm run build: pass",
+      "node tests/browser-smoke.mjs: pass with scale 1.034",
+      "git diff --check: pass",
+      "all six prior harness subtree identity checks before and after matrix: pass"
+    ]
+  },
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-authored-auto-id-provenance",
+    "finding_receipt": "independent_review-g7.json",
+    "status": "resolved"
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "34 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "41 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 37 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Authored and synthetic provenance, persona, custom loop/layout, and runtime assertions passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "prior_harness_preservation": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {
+      "audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {
+      "audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": {
+      "audit_tree": "53189bc2bd72067cf169ee84906cc94e32fc0239",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    },
+    "plans/meta-harness-2026-08-02-persona-readability-recovery": {
+      "audit_tree": "01c03937108feeda155d0f2c464abcd80d82f01a",
+      "pre_matrix": "pass",
+      "post_matrix": "pass"
+    }
+  },
+  "dependency_state": {
+    "installed_by_run": false,
+    "package_files_identical_to_source": true,
+    "temporary_symlink_needed": false,
+    "detail": "A real worktree node_modules directory was already present; no installation, synchronization, or dependency-link mutation occurred."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}
