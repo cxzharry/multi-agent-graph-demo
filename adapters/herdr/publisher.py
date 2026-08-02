@@ -46,6 +46,170 @@ class PublisherError(ValueError):
     """Raised when supplied state cannot produce a role-graph snapshot."""
 
 
+def _lane_chains(
+    state: dict,
+) -> tuple[list[str], dict[str, str], dict[str, list[str]]]:
+    lanes = state.get("lanes", {})
+    successors: dict[str, list[str]] = {}
+    non_roots: set[str] = set()
+    for lane_id, lane in lanes.items():
+        predecessor = lane.get("supersedes")
+        if predecessor is None:
+            continue
+        if predecessor not in lanes:
+            raise PublisherError(
+                f"lane {lane_id} supersedes unknown lane {predecessor}"
+            )
+        successors.setdefault(predecessor, []).append(lane_id)
+        non_roots.add(lane_id)
+
+    roots = sorted(set(lanes) - non_roots)
+    member_to_tip: dict[str, str] = {}
+    root_to_members: dict[str, list[str]] = {}
+    visited_all: set[str] = set()
+    for root in roots:
+        current = root
+        members = [root]
+        seen = {root}
+        while current in successors:
+            choices = sorted(successors[current])
+            if len(choices) != 1:
+                raise PublisherError(
+                    f"lane {current} has multiple supersession successors: "
+                    f"{', '.join(choices)}"
+                )
+            current = choices[0]
+            if current in seen:
+                raise PublisherError(f"supersession cycle includes lane {current}")
+            seen.add(current)
+            members.append(current)
+        for member in members:
+            member_to_tip[member] = current
+        root_to_members[root] = members
+        visited_all.update(members)
+    if visited_all != set(lanes):
+        unresolved = ", ".join(sorted(set(lanes) - visited_all))
+        raise PublisherError(f"supersession cycle includes lanes: {unresolved}")
+    return roots, member_to_tip, root_to_members
+
+
+def _lane_definition(
+    root: str,
+    tip: str,
+    lane: dict,
+    layer: int,
+    prefix: str,
+) -> dict:
+    label = root.replace("_", " ").replace("-", " ").title()
+    return {
+        "id": f"{prefix}-{root.replace('_', '-')}",
+        "role": lane.get("role") or label,
+        "assignee": lane.get("slot") or "",
+        "layer": layer,
+        "task": lane.get("task_summary") or "",
+        "source": {"type": "lane", "id": tip},
+    }
+
+
+def synthesize_manifest(state: dict) -> dict:
+    """Derive a deterministic operational manifest without writing it."""
+    run_id = state.get("run", {}).get("contract_id")
+    if not isinstance(run_id, str) or not run_id:
+        raise PublisherError("run.contract_id is required")
+    roots, member_to_tip, _ = _lane_chains(state)
+    lanes = state.get("lanes", {})
+    nodes = [
+        {
+            "id": "orchestrator",
+            "role": "Orchestrator",
+            "assignee": "P1",
+            "layer": 0,
+            "task": state.get("slots", {})
+            .get("P1", {})
+            .get("task_summary", "Route ready work"),
+            "source": {"type": "slot", "id": "P1"},
+        }
+    ]
+    for root in roots:
+        tip = member_to_tip[root]
+        nodes.append(_lane_definition(root, tip, lanes[tip], 1, "auto"))
+    return {
+        "schemaVersion": "herdr-role-graph-manifest/v1",
+        "flowId": "auto-operational",
+        "title": f"Auto operational view — {run_id}",
+        "nodes": nodes,
+        "edges": [
+            {
+                "id": f"control-{node['id']}",
+                "source": "orchestrator",
+                "target": node["id"],
+                "kind": "forward",
+                "status": "active",
+            }
+            for node in nodes[1:]
+        ],
+        "failurePolicies": [],
+    }
+
+
+def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, str]]:
+    materialized = copy.deepcopy(manifest)
+    roots, member_to_tip, root_to_members = _lane_chains(state)
+    lanes = state.get("lanes", {})
+    member_to_root = {
+        member: root
+        for root, members in root_to_members.items()
+        for member in members
+    }
+    lane_nodes: dict[str, str] = {}
+    mapped_roots: set[str] = set()
+    authored_nodes = materialized.get("nodes", [])
+    p1_nodes = [
+        node
+        for node in authored_nodes
+        if node.get("source", {}).get("type") == "slot"
+        and node.get("source", {}).get("id") == "P1"
+    ]
+
+    for node in authored_nodes:
+        source = node.get("source", {})
+        if source.get("type") != "lane":
+            continue
+        source_id = source.get("id")
+        if source_id not in member_to_tip:
+            continue
+        root = member_to_root[source_id]
+        source["id"] = member_to_tip[source_id]
+        mapped_roots.add(root)
+        for member in root_to_members[root]:
+            lane_nodes.setdefault(member, node["id"])
+
+    additions = []
+    for root in roots:
+        if root in mapped_roots:
+            continue
+        tip = member_to_tip[root]
+        addition = _lane_definition(root, tip, lanes[tip], 1, "live")
+        additions.append(addition)
+        for member in root_to_members[root]:
+            lane_nodes[member] = addition["id"]
+    authored_nodes.extend(additions)
+
+    if len(p1_nodes) == 1:
+        source_id = p1_nodes[0]["id"]
+        materialized.setdefault("edges", []).extend(
+            {
+                "id": f"control-{source_id}-{addition['id']}",
+                "source": source_id,
+                "target": addition["id"],
+                "kind": "forward",
+                "status": "active",
+            }
+            for addition in additions
+        )
+    return materialized, lane_nodes
+
+
 def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
     """Return one role-graph/v1 snapshot without I/O."""
     if state.get("workspace_id") != workspace_id:
@@ -60,9 +224,10 @@ def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
     if not isinstance(run_id, str) or not run_id:
         raise PublisherError("run.contract_id is required")
 
+    materialized, lane_nodes = _materialize_manifest(state, manifest)
     resolved = {}
     nodes = []
-    for definition in manifest.get("nodes", []):
+    for definition in materialized.get("nodes", []):
         record, source_type = _resolve_source(state, definition)
         resolved[definition["id"]] = (record, source_type)
         node = {
@@ -77,8 +242,8 @@ def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
             node["layer"] = definition["layer"]
         nodes.append(node)
 
-    policies = copy.deepcopy(manifest.get("failurePolicies", []))
-    active_route = _active_failure_route(policies, resolved, manifest)
+    policies = copy.deepcopy(materialized.get("failurePolicies", []))
+    active_route = _active_failure_route(policies, resolved, materialized)
     generated_at = _generated_at(state)
 
     return {
@@ -87,12 +252,14 @@ def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
         "runId": run_id,
         "sequence": revision,
         "generatedAt": generated_at,
-        "title": manifest.get("title", manifest.get("flowId", run_id)),
+        "title": materialized.get(
+            "title", materialized.get("flowId", run_id)
+        ),
         "nodes": nodes,
-        "edges": copy.deepcopy(manifest.get("edges", [])),
+        "edges": copy.deepcopy(materialized.get("edges", [])),
         "failurePolicies": policies,
         "activeFailureRoute": active_route,
-        "events": _events(state, manifest, generated_at),
+        "events": _events(state, lane_nodes, generated_at),
     }
 
 
@@ -116,13 +283,17 @@ def publish_snapshot(snapshot: dict, endpoint: str, token: str | None) -> None:
 
 def publish_if_changed(
     state_path: Path,
-    manifest_path: Path,
+    manifest_path: Path | None,
     workspace_id: str,
     endpoint: str,
     token: str | None,
     last_revision: int | None,
+    *,
+    synthesize: bool = False,
 ) -> int:
     """Publish the supplied state only when its revision changes."""
+    if synthesize == (manifest_path is not None):
+        raise PublisherError("select exactly one of manifest_path or synthesize")
     state = _read_json(state_path)
     if state.get("workspace_id") != workspace_id:
         raise PublisherError(
@@ -132,7 +303,7 @@ def publish_if_changed(
     if revision == last_revision:
         return revision
 
-    manifest = _read_json(manifest_path)
+    manifest = synthesize_manifest(state) if synthesize else _read_json(manifest_path)
     snapshot = build_snapshot(state, manifest, workspace_id)
     publish_snapshot(snapshot, endpoint, token)
     return snapshot["sequence"]
@@ -240,13 +411,11 @@ def _generated_at(state: dict) -> str:
     return "1970-01-01T00:00:00Z"
 
 
-def _events(state: dict, manifest: dict, generated_at: str) -> list[dict]:
-    lane_nodes = {}
-    for node in manifest.get("nodes", []):
-        source = node.get("source", {})
-        if source.get("type") == "lane":
-            lane_nodes.setdefault(source.get("id"), node["id"])
-
+def _events(
+    state: dict,
+    lane_nodes: dict[str, str],
+    generated_at: str,
+) -> list[dict]:
     result = []
     events = state.get("events", [])
     for index, event in enumerate(events[-EVENT_LIMIT:]):
@@ -279,7 +448,9 @@ def _positive_interval(value: str) -> float:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state", type=Path, required=True)
-    parser.add_argument("--manifest", type=Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--manifest", type=Path)
+    mode.add_argument("--synthesize", action="store_true")
     parser.add_argument("--workspace-id", required=True)
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--token")
@@ -300,6 +471,7 @@ def main() -> int:
                 args.endpoint,
                 args.token,
                 last_revision,
+                synthesize=args.synthesize,
             )
             if revision != last_revision:
                 print(json.dumps({"status": "published", "revision": revision}))

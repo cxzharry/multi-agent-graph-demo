@@ -8,9 +8,11 @@ from unittest import mock
 
 from adapters.herdr.publisher import (
     PublisherError,
+    _parser,
     build_snapshot,
     publish_if_changed,
     publish_snapshot,
+    synthesize_manifest,
 )
 
 
@@ -144,6 +146,49 @@ def fixture_manifest():
     }
 
 
+class SyntheticManifestTests(unittest.TestCase):
+    def test_synthetic_manifest_is_deterministic_and_only_claims_control_edges(self):
+        state = fixture_state()
+        state["lanes"]["implementation_a"].update(
+            {
+                "lane_id": "implementation_a",
+                "role": "Implementation",
+                "slot": "P2",
+            }
+        )
+
+        first = synthesize_manifest(state)
+        second = synthesize_manifest(copy.deepcopy(state))
+
+        self.assertEqual(first, second)
+        self.assertEqual([], first["failurePolicies"])
+        self.assertTrue(first["title"].startswith("Auto operational view"))
+        self.assertEqual(
+            {("orchestrator", node["id"]) for node in first["nodes"][1:]},
+            {(edge["source"], edge["target"]) for edge in first["edges"]},
+        )
+
+    def test_synthetic_snapshot_contains_lane_added_at_current_revision(self):
+        state = fixture_state()
+        state["revision"] = 43
+        state["lanes"]["late_task"] = {
+            "lane_id": "late_task",
+            "role": "Follow-up",
+            "slot": "P3",
+            "state": "ACTIVE",
+            "generation": 1,
+            "task_summary": "Handle late task",
+        }
+
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+
+        self.assertEqual(43, snapshot["sequence"])
+        self.assertIn(
+            "Handle late task",
+            {node["task"] for node in snapshot["nodes"]},
+        )
+
+
 class BuildSnapshotTests(unittest.TestCase):
     def test_maps_exact_workspace_to_generic_snapshot_identity(self):
         snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK")
@@ -236,8 +281,207 @@ class BuildSnapshotTests(unittest.TestCase):
         self.assertEqual(original_state, state)
         self.assertEqual(original_manifest, manifest)
 
+    def test_custom_node_tracks_reassignment_tip_and_chain_events(self):
+        state = fixture_state()
+        state["lanes"]["implementation_a"]["state"] = "SUPERSEDED"
+        state["lanes"]["implementation_a_reassigned_g2"] = {
+            "lane_id": "implementation_a_reassigned_g2",
+            "supersedes": "implementation_a",
+            "state": "ACTIVE",
+            "generation": 2,
+            "slot": "P3",
+            "task_summary": "Build adapter",
+        }
+        state["events"].append(
+            {
+                "cursor": 61,
+                "event_id": "event-g2",
+                "kind": "LANE_PROGRESS",
+                "lane_id": "implementation_a_reassigned_g2",
+                "generation": 2,
+            }
+        )
+
+        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+        node = next(
+            item for item in snapshot["nodes"] if item["id"] == "implementation-a"
+        )
+
+        self.assertEqual("running", node["status"])
+        self.assertEqual(2, node["generation"])
+        self.assertEqual("implementation-a", snapshot["events"][-2]["nodeId"])
+        self.assertEqual("implementation-a", snapshot["events"][-1]["nodeId"])
+
+    def test_custom_manifest_appends_only_unmapped_logical_lane(self):
+        state = fixture_state()
+        state["lanes"]["late_task"] = {
+            "lane_id": "late_task",
+            "role": "Follow-up",
+            "slot": "P4",
+            "state": "ACTIVE",
+            "generation": 1,
+        }
+
+        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+        additions = [
+            node for node in snapshot["nodes"] if node["id"].startswith("live-")
+        ]
+
+        self.assertEqual(["P4"], [node["assignee"] for node in additions])
+        self.assertEqual(
+            1,
+            sum(
+                edge["target"] == additions[0]["id"]
+                for edge in snapshot["edges"]
+            ),
+        )
+
+    def test_live_addition_has_no_control_edge_when_p1_source_is_ambiguous(self):
+        state = fixture_state()
+        state["lanes"]["late_task"] = {
+            "state": "ACTIVE",
+            "generation": 1,
+        }
+        manifest = fixture_manifest()
+        manifest["nodes"].append(
+            {
+                "id": "orchestrator-shadow",
+                "role": "Orchestrator Shadow",
+                "assignee": "P1",
+                "source": {"type": "slot", "id": "P1"},
+            }
+        )
+
+        snapshot = build_snapshot(state, manifest, "wK")
+        addition = next(
+            node for node in snapshot["nodes"] if node["id"] == "live-late-task"
+        )
+
+        self.assertFalse(
+            any(edge["target"] == addition["id"] for edge in snapshot["edges"])
+        )
+
 
 class PublishingTests(unittest.TestCase):
+    def test_synthetic_mode_publishes_without_manifest_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(fixture_state()), encoding="utf-8")
+
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                revision = publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    None,
+                    synthesize=True,
+                )
+
+        self.assertEqual(42, revision)
+        snapshot = publish.call_args.args[0]
+        self.assertTrue(snapshot["title"].startswith("Auto operational view"))
+
+    def test_rejects_missing_or_conflicting_publisher_modes_before_network(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_path = root / "state.json"
+            manifest_path = root / "manifest.json"
+            state_path.write_text(json.dumps(fixture_state()), encoding="utf-8")
+            manifest_path.write_text(
+                json.dumps(fixture_manifest()),
+                encoding="utf-8",
+            )
+
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                for selected_manifest, synthesize in (
+                    (None, False),
+                    (manifest_path, True),
+                ):
+                    with self.subTest(
+                        manifest=selected_manifest,
+                        synthesize=synthesize,
+                    ):
+                        with self.assertRaisesRegex(
+                            PublisherError,
+                            "select exactly one",
+                        ):
+                            publish_if_changed(
+                                state_path,
+                                selected_manifest,
+                                "wK",
+                                "http://127.0.0.1:4173/api/snapshots",
+                                None,
+                                None,
+                                synthesize=synthesize,
+                            )
+
+            publish.assert_not_called()
+
+    def test_supersession_branch_fails_before_network_access(self):
+        state = fixture_state()
+        state["lanes"]["implementation_a_reassigned_g2"] = {
+            "supersedes": "implementation_a",
+        }
+        state["lanes"]["implementation_a_hotfix_g2"] = {
+            "supersedes": "implementation_a",
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                with self.assertRaisesRegex(
+                    PublisherError,
+                    "implementation_a.*implementation_a_hotfix_g2.*"
+                    "implementation_a_reassigned_g2",
+                ):
+                    publish_if_changed(
+                        state_path,
+                        None,
+                        "wK",
+                        "http://127.0.0.1:4173/api/snapshots",
+                        None,
+                        None,
+                        synthesize=True,
+                    )
+
+        publish.assert_not_called()
+
+    def test_supersession_cycle_fails_before_network_access(self):
+        state = fixture_state()
+        state["lanes"]["implementation_a"]["supersedes"] = "integration"
+        state["lanes"]["integration"]["supersedes"] = "implementation_a"
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                with self.assertRaisesRegex(
+                    PublisherError,
+                    "implementation_a.*integration|integration.*implementation_a",
+                ):
+                    publish_if_changed(
+                        state_path,
+                        None,
+                        "wK",
+                        "http://127.0.0.1:4173/api/snapshots",
+                        None,
+                        None,
+                        synthesize=True,
+                    )
+
+        publish.assert_not_called()
+
     def test_workspace_mismatch_fails_before_network_access(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -395,6 +639,24 @@ class ReadOnlyContractTests(unittest.TestCase):
                 "system",
             }
         )
+
+
+class ParserTests(unittest.TestCase):
+    def test_accepts_synthetic_mode_without_manifest(self):
+        args = _parser().parse_args(
+            [
+                "--state",
+                "state.json",
+                "--synthesize",
+                "--workspace-id",
+                "wK",
+                "--endpoint",
+                "http://127.0.0.1:4173/api/snapshots",
+            ]
+        )
+
+        self.assertTrue(args.synthesize)
+        self.assertIsNone(args.manifest)
 
 
 if __name__ == "__main__":
