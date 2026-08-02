@@ -1,0 +1,32 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 owns combined verification of two accepted runtime fixes; P7 is the routed finding source",
+  "candidate_commit": "84ed920c0ab45b2a764207abbd59374b76b56a5c",
+  "candidate_tree": "3b6d9492b8790c6bab2d6a32ff18f9c8da6296dc",
+  "routed_input": {
+    "source": "P7",
+    "finding_id": "p7-live-runtime-cold-and-mode-replacement",
+    "failure_class": "implementation",
+    "expected": "Real Herdr imperative calls succeed without JSON output and a same-state mode switch can explicitly replace only the current equal sequence",
+    "actual": "Empty successful Herdr output was rejected and equal-sequence mode replacement received HTTP 409"
+  },
+  "prior_scores": null,
+  "failure_class": null,
+  "targeted_criteria": [
+    "real_herdr_imperative_compatibility",
+    "explicit_mode_replacement_safety",
+    "sequence_store_backward_compatibility"
+  ],
+  "hypothesis": "Separating imperative/query Herdr response handling and adding a first-POST-only explicit equal replacement path resolves live recovery without weakening default monotonic sequence rules",
+  "what_not_to_retry": [
+    "Do not allow implicit equal-sequence replacement",
+    "Do not permit any lower-sequence replacement",
+    "Do not add --replace-current to cold or ordinary publisher starts",
+    "Do not operate live panes or modify earlier harness histories",
+    "Do not rerun frozen baselines or install dependencies"
+  ]
+}

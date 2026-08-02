@@ -1,0 +1,26 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "84ed920c0ab45b2a764207abbd59374b76b56a5c",
+  "candidate_tree": "3b6d9492b8790c6bab2d6a32ff18f9c8da6296dc",
+  "prior_scores": null,
+  "scores": {
+    "real_herdr_imperative_compatibility": 9,
+    "explicit_mode_replacement_safety": 9,
+    "sequence_store_backward_compatibility": 9,
+    "pane_process_lifecycle_contracts": 8,
+    "full_integration_quality": 9
+  },
+  "weighted_composite": 8.8,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: imperative/query response separation plus an explicit first-POST equal replacement path restores live recovery without weakening default sequence or pane lifecycle contracts",
+  "what_not_to_retry": [
+    "Do not run another iteration after SUCCESS",
+    "Do not allow implicit equal or any lower-sequence replacement",
+    "Do not add replacement flags to cold or ordinary publisher starts",
+    "Do not modify prior harness histories or frozen baselines",
+    "Do not install, push, deliver, or operate live panes"
+  ],
+  "stop_condition": "SUCCESS"
+}

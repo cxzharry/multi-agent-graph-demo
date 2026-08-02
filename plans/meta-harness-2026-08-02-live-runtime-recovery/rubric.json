@@ -1,0 +1,52 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "DELIVER",
+  "locked": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "orchestration_mode": "local_controller",
+  "criteria": [
+    {
+      "id": "real_herdr_imperative_compatibility",
+      "description": "Imperative Herdr success accepts empty stdout while query and split contracts remain strict",
+      "weight": 1
+    },
+    {
+      "id": "explicit_mode_replacement_safety",
+      "description": "Replacement is explicit, first-POST-only, and limited to mismatched same-state publisher recovery",
+      "weight": 1
+    },
+    {
+      "id": "sequence_store_backward_compatibility",
+      "description": "Only explicit equal-sequence replacement is accepted; defaults and all lower sequences remain rejected and hydration stays correct",
+      "weight": 1
+    },
+    {
+      "id": "pane_process_lifecycle_contracts",
+      "description": "P1 anchoring, isolation, exact reuse, replacement, locking, no-focus, and no-close behavior remain correct",
+      "weight": 1
+    },
+    {
+      "id": "full_integration_quality",
+      "description": "Publisher, launcher, frontend, build, browser, and diff verification all pass",
+      "weight": 1
+    }
+  ],
+  "routed_input": {
+    "source": "P7",
+    "finding_id": "p7-live-runtime-cold-and-mode-replacement"
+  },
+  "prior_harness_audit_trees": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": "b43deffeb76a4c23d357c74c516237d3690de6fb"
+  },
+  "frozen_comparison": {
+    "compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false
+  }
+}

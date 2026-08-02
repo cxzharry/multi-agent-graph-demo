@@ -1,0 +1,75 @@
+{
+  "id": "20260802-live-runtime-recovery-integration-g4",
+  "pipeline": "adversarial-dev",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "trace_kind": "run",
+  "generated": "2026-08-02T08:24:19Z",
+  "plan_dir": "plans/meta-harness-2026-08-02-live-runtime-recovery",
+  "plan_group_key": "meta-harness-2026-08-02-live-runtime-recovery",
+  "dedupe_key": "meta-harness-2026-08-02-live-runtime-recovery",
+  "feedback_sources": [
+    "feedback/iter-1.json"
+  ],
+  "sprints": {
+    "total": 1,
+    "iterations_observed": 1
+  },
+  "routed_inputs": [
+    {
+      "source": "P7",
+      "finding_id": "p7-live-runtime-cold-and-mode-replacement",
+      "failure_class": "implementation",
+      "targeted_criteria": [
+        "real_herdr_imperative_compatibility",
+        "explicit_mode_replacement_safety",
+        "sequence_store_backward_compatibility"
+      ],
+      "status": "resolved"
+    }
+  ],
+  "retries": [],
+  "evaluator_scores": {
+    "real_herdr_imperative_compatibility": [9],
+    "explicit_mode_replacement_safety": [9],
+    "sequence_store_backward_compatibility": [9],
+    "pane_process_lifecycle_contracts": [8],
+    "full_integration_quality": [9]
+  },
+  "evaluator_scores_avg": {
+    "real_herdr_imperative_compatibility": 9,
+    "explicit_mode_replacement_safety": 9,
+    "sequence_store_backward_compatibility": 9,
+    "pane_process_lifecycle_contracts": 8,
+    "full_integration_quality": 9
+  },
+  "criterion_evidence": {
+    "real_herdr_imperative_compatibility": ["feedback/iter-1.json"],
+    "explicit_mode_replacement_safety": ["feedback/iter-1.json"],
+    "sequence_store_backward_compatibility": ["feedback/iter-1.json"],
+    "pane_process_lifecycle_contracts": ["feedback/iter-1.json"],
+    "full_integration_quality": ["feedback/iter-1.json"]
+  },
+  "owner_metrics": {},
+  "friction_summary": {
+    "highest_retry_skill": null,
+    "highest_retry_executor": null,
+    "highest_learning_owner": null,
+    "lowest_avg_criterion": "pane_process_lifecycle_contracts",
+    "total_retries": 0,
+    "crystallize_eligible_retries": 0,
+    "retry_failure_evidence_missing": 0,
+    "unknown_learning_owner_count": 0,
+    "exclude_from_crystallize": false,
+    "dedupe_key": "meta-harness-2026-08-02-live-runtime-recovery"
+  },
+  "environment_friction": [],
+  "outcome": "success",
+  "outcome_detail": {
+    "exit_code": "SUCCESS",
+    "normalized_outcome": "success",
+    "best_iteration": 1,
+    "composite_trajectory": [{"iter": 1, "composite": 8.8}],
+    "total_iterations": 1
+  }
+}

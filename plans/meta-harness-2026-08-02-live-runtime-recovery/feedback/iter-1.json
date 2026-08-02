@@ -1,0 +1,106 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "84ed920c0ab45b2a764207abbd59374b76b56a5c",
+  "candidate_tree": "3b6d9492b8790c6bab2d6a32ff18f9c8da6296dc",
+  "passed": true,
+  "weighted_composite": 8.8,
+  "scores": {
+    "real_herdr_imperative_compatibility": {
+      "score": 9,
+      "evidence": "Launcher tests prove successful imperative pane run and send-keys commands accept empty stdout, JSON query responses still parse, nonzero exits still fail, and pane split still requires a concrete pane result."
+    },
+    "explicit_mode_replacement_safety": {
+      "score": 9,
+      "evidence": "Publisher tests prove the explicit header and first-watch-POST-only behavior. Launcher tests prove --replace-current appears only after stopping a mismatched same-state ordinary publisher and is absent from cold, synthetic, and ordinary new publisher starts."
+    },
+    "sequence_store_backward_compatibility": {
+      "score": 9,
+      "evidence": "Server and store tests prove default equal and lower sequences remain conflicts, explicit lower remains rejected, explicit equal is accepted, persisted, and restored after hydration, and unrelated scope/run stores remain isolated."
+    },
+    "pane_process_lifecycle_contracts": {
+      "score": 8,
+      "evidence": "All 35 launcher tests passed, preserving selected-ledger P1 anchoring, right-side rail geometry, no-focus behavior, agent-pane exclusion, exact reuse identity, same-pane replacement, locking, bounded calls, and concurrent duplicate prevention."
+    },
+    "full_integration_quality": {
+      "score": 9,
+      "evidence": "Publisher 31 tests, launcher 35 tests, Vitest 37 tests, TypeScript/Vite production build, browser smoke, and git diff --check all passed. Browser smoke reported scale 1.034 and no error."
+    }
+  },
+  "criterion_evidence": {
+    "real_herdr_imperative_compatibility": [
+      "test_cold_pane_run_accepts_empty_stdout_success",
+      "test_mode_switch_send_keys_accepts_empty_stdout_success",
+      "test_herdr_still_parses_json_query_response",
+      "test_split_pane_still_requires_pane_result"
+    ],
+    "explicit_mode_replacement_safety": [
+      "test_posts_explicit_replacement_header_when_requested",
+      "test_cli_replace_current_marks_only_first_watch_post",
+      "mode-switch test asserts --replace-current",
+      "cold and synthetic launch tests assert flag absence"
+    ],
+    "sequence_store_backward_compatibility": [
+      "default equal and lower POSTs return 409",
+      "explicit equal returns 202 and explicit lower returns 409",
+      "store explicit equal replacement survives restart hydration"
+    ],
+    "pane_process_lifecycle_contracts": [
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 35 passed"
+    ],
+    "full_integration_quality": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 31 passed",
+      "npm test -- --run: 37 passed",
+      "npm run build: pass",
+      "node tests/browser-smoke.mjs: pass",
+      "git diff --check: pass"
+    ]
+  },
+  "routed_input": {
+    "source": "P7",
+    "finding_id": "p7-live-runtime-cold-and-mode-replacement",
+    "status": "resolved"
+  },
+  "verification": [
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "31 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "35 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 37 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Browser smoke passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "dependency_state": {
+    "installed_by_run": false,
+    "package_files_identical_to_source": true,
+    "temporary_symlink_needed": false,
+    "detail": "A worktree node_modules directory was already present; the run neither installed dependencies nor created or removed a dependency link."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

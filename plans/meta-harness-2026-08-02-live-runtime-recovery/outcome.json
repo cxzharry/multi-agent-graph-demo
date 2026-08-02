@@ -1,0 +1,69 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.8,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 8.8
+    }
+  ],
+  "final_scores": {
+    "real_herdr_imperative_compatibility": 9,
+    "explicit_mode_replacement_safety": 9,
+    "sequence_store_backward_compatibility": 9,
+    "pane_process_lifecycle_contracts": 8,
+    "full_integration_quality": 9
+  },
+  "routed_inputs": [
+    {
+      "source": "P7",
+      "finding_id": "p7-live-runtime-cold-and-mode-replacement",
+      "status": "resolved"
+    }
+  ],
+  "product_findings": [],
+  "product_corrections": [
+    {
+      "accepted_commit": "a73cf68d4c6ab3f98ec3d94ad171dc7249f63f7f",
+      "integrated_commit": "cabc6db17549816c1081b38d39ea0d2ba8c3e272",
+      "summary": "Add explicit first-POST equal-sequence replacement while retaining default and lower-sequence conflicts"
+    },
+    {
+      "accepted_commit": "9ee0c4226076c1975b69223180c34b503684fc9c",
+      "integrated_commit": "84ed920c0ab45b2a764207abbd59374b76b56a5c",
+      "summary": "Accept empty imperative Herdr success and flag only mismatched same-state publisher replacement"
+    }
+  ],
+  "prior_harnesses": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {
+      "audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+      "modified": false
+    },
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {
+      "audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+      "modified": false
+    }
+  },
+  "frozen_baselines": {
+    "compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted_in_plan_dir",
+    "path": "trace.json",
+    "note": "The trace is kept with the isolated follow-on artifacts so only this directory is committed."
+  },
+  "completed_at_utc": "2026-08-02T08:24:19Z"
+}
