@@ -269,11 +269,19 @@ def _herdr(*args: str) -> dict[str, Any]:
         message = result.stderr.strip() or result.stdout.strip()
         raise LauncherError("herdr_error", message or f"herdr {' '.join(args)} failed")
     if not result.stdout.strip():
-        return {}
+        if args[:2] in {("pane", "run"), ("pane", "send-keys")}:
+            return {}
+        raise LauncherError(
+            "herdr_error", "Invalid Herdr response: empty stdout", invalid_response=True
+        )
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as error:
-        raise LauncherError("herdr_error", f"Invalid Herdr response: {result.stdout}") from error
+        raise LauncherError(
+            "herdr_error",
+            f"Invalid Herdr response: {result.stdout}",
+            invalid_response=True,
+        ) from error
 
 
 def _result_value(response: dict[str, Any], key: str) -> Any:
@@ -379,6 +387,8 @@ def _find_publisher(
             try:
                 response = _herdr("pane", "process-info", "--pane", pane_id)
             except LauncherError as error:
+                if error.details.get("invalid_response"):
+                    raise
                 if error.code in {"herdr_error", "herdr_timeout"}:
                     stale_seen = True
                     continue
@@ -410,6 +420,8 @@ def _find_publisher_for_state(
         try:
             response = _herdr("pane", "process-info", "--pane", pane_id)
         except LauncherError as error:
+            if error.details.get("invalid_response"):
+                raise
             if error.code in {"herdr_error", "herdr_timeout"}:
                 continue
             raise

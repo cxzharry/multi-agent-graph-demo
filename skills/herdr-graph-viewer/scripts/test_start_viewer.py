@@ -143,6 +143,90 @@ class StartViewerTest(unittest.TestCase):
             herdr.assert_not_called()
             probe.assert_not_called()
 
+    def assert_empty_query_fails_before_mutation(self, empty_query: str) -> None:
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                revision=8,
+            )
+            commands: list[tuple[str, ...]] = []
+
+            def fake_run(command, **_kwargs):
+                args = tuple(command[1:])
+                commands.append(args)
+                if args[:2] == ("pane", "list"):
+                    stdout = (
+                        ""
+                        if empty_query == "pane-list"
+                        else json.dumps(
+                            {"result": {"panes": [{"pane_id": "publisher"}]}}
+                        )
+                    )
+                elif args[:2] == ("pane", "process-info"):
+                    stdout = ""
+                elif args[:2] == ("pane", "split"):
+                    stdout = json.dumps(
+                        {"result": {"pane": {"pane_id": "new-publisher"}}}
+                    )
+                elif args[:2] in {
+                    ("pane", "rename"),
+                    ("pane", "run"),
+                    ("pane", "send-keys"),
+                }:
+                    stdout = ""
+                else:
+                    raise AssertionError(args)
+                return mock.Mock(returncode=0, stdout=stdout, stderr="")
+
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(
+                launcher.subprocess, "run", side_effect=fake_run
+            ), mock.patch.object(
+                launcher, "probe_viewer", return_value="viewer"
+            ), mock.patch.object(
+                launcher,
+                "_snapshot",
+                return_value={
+                    "scopeId": "herdr:w1",
+                    "runId": "current-run",
+                    "sequence": 8,
+                },
+            ):
+                with self.assertRaises(launcher.LauncherError) as raised:
+                    launcher.launch(args)
+
+            self.assertEqual(raised.exception.code, "herdr_error")
+            expected = [("pane", "list", "--workspace", "w1")]
+            if empty_query == "process-info":
+                expected.append(("pane", "process-info", "--pane", "publisher"))
+            self.assertEqual(commands, expected)
+
     def test_selects_state_bound_to_current_p1_pane(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
@@ -822,6 +906,12 @@ class StartViewerTest(unittest.TestCase):
             response = launcher._herdr("pane", "list", "--workspace", "w1")
 
         self.assertEqual(response, expected)
+
+    def test_empty_pane_list_fails_before_pane_mutation(self):
+        self.assert_empty_query_fails_before_mutation("pane-list")
+
+    def test_empty_process_info_fails_before_pane_mutation(self):
+        self.assert_empty_query_fails_before_mutation("process-info")
 
     def test_split_pane_still_requires_pane_result(self):
         launcher = self.require_launcher()
