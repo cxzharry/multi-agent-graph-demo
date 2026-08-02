@@ -1,6 +1,7 @@
 import ast
 import copy
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -146,6 +147,24 @@ def fixture_manifest():
     }
 
 
+def assert_protocol_valid(test_case, snapshot):
+    validator = """
+import {validateSnapshot} from './shared/role-graph.js';
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+validateSnapshot(JSON.parse(chunks.join('')));
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", validator],
+        cwd=Path(__file__).parents[2],
+        input=json.dumps(snapshot),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    test_case.assertEqual(0, result.returncode, result.stderr)
+
+
 class SyntheticManifestTests(unittest.TestCase):
     def test_synthetic_manifest_is_deterministic_and_only_claims_control_edges(self):
         state = fixture_state()
@@ -187,6 +206,39 @@ class SyntheticManifestTests(unittest.TestCase):
             "Handle late task",
             {node["task"] for node in snapshot["nodes"]},
         )
+
+    def test_sparse_canonical_lanes_produce_a_protocol_valid_snapshot(self):
+        state = fixture_state()
+
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+        correction = next(
+            node for node in snapshot["nodes"] if node["role"] == "Correction Owner"
+        )
+
+        self.assertEqual("Unassigned", correction["assignee"])
+        self.assertEqual("Correction Owner", correction["task"])
+        assert_protocol_valid(self, snapshot)
+
+    def test_synthetic_lane_ids_do_not_collide_after_encoding(self):
+        state = fixture_state()
+        state["lanes"] = {
+            "lane_a": {
+                "role": "Underscore Lane",
+                "slot": "P2",
+                "task_summary": "Handle underscore lane",
+            },
+            "lane-a": {
+                "role": "Hyphen Lane",
+                "slot": "P3",
+                "task_summary": "Handle hyphen lane",
+            },
+        }
+
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK")
+        lane_ids = [node["id"] for node in snapshot["nodes"][1:]]
+
+        self.assertEqual(2, len(set(lane_ids)))
+        assert_protocol_valid(self, snapshot)
 
 
 class BuildSnapshotTests(unittest.TestCase):
@@ -309,6 +361,7 @@ class BuildSnapshotTests(unittest.TestCase):
 
         self.assertEqual("running", node["status"])
         self.assertEqual(2, node["generation"])
+        self.assertEqual("P3", node["assignee"])
         self.assertEqual("implementation-a", snapshot["events"][-2]["nodeId"])
         self.assertEqual("implementation-a", snapshot["events"][-1]["nodeId"])
 
@@ -354,12 +407,34 @@ class BuildSnapshotTests(unittest.TestCase):
 
         snapshot = build_snapshot(state, manifest, "wK")
         addition = next(
-            node for node in snapshot["nodes"] if node["id"] == "live-late-task"
+            node for node in snapshot["nodes"] if node["id"].startswith("live-")
         )
 
         self.assertFalse(
             any(edge["target"] == addition["id"] for edge in snapshot["edges"])
         )
+
+    def test_custom_live_addition_ids_do_not_collide_after_encoding(self):
+        state = fixture_state()
+        state["lanes"]["lane_a"] = {
+            "role": "Underscore Lane",
+            "slot": "P2",
+            "task_summary": "Handle underscore lane",
+        }
+        state["lanes"]["lane-a"] = {
+            "role": "Hyphen Lane",
+            "slot": "P3",
+            "task_summary": "Handle hyphen lane",
+        }
+
+        snapshot = build_snapshot(state, fixture_manifest(), "wK")
+        additions = [
+            node for node in snapshot["nodes"] if node["id"].startswith("live-")
+        ]
+
+        self.assertEqual(2, len(additions))
+        self.assertEqual(2, len({node["id"] for node in additions}))
+        assert_protocol_valid(self, snapshot)
 
 
 class PublishingTests(unittest.TestCase):

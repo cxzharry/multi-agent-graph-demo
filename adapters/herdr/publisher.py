@@ -102,13 +102,21 @@ def _lane_definition(
 ) -> dict:
     label = root.replace("_", " ").replace("-", " ").title()
     return {
-        "id": f"{prefix}-{root.replace('_', '-')}",
+        "id": _lane_node_id(prefix, root),
         "role": lane.get("role") or label,
-        "assignee": lane.get("slot") or "",
+        "assignee": _lane_assignee(lane, "Unassigned"),
         "layer": layer,
-        "task": lane.get("task_summary") or "",
+        "task": lane.get("task_summary") or label,
         "source": {"type": "lane", "id": tip},
     }
+
+
+def _lane_assignee(lane: dict, fallback: str) -> str:
+    return lane.get("slot") or lane.get("assignee") or fallback
+
+
+def _lane_node_id(prefix: str, lane_id: str) -> str:
+    return f"{prefix}-{lane_id.encode('utf-8').hex()}"
 
 
 def synthesize_manifest(state: dict) -> dict:
@@ -179,7 +187,9 @@ def _materialize_manifest(state: dict, manifest: dict) -> tuple[dict, dict[str, 
         if source_id not in member_to_tip:
             continue
         root = member_to_root[source_id]
-        source["id"] = member_to_tip[source_id]
+        tip = member_to_tip[source_id]
+        source["id"] = tip
+        node["assignee"] = _lane_assignee(lanes[tip], node["assignee"])
         mapped_roots.add(root)
         for member in root_to_members[root]:
             lane_nodes.setdefault(member, node["id"])
