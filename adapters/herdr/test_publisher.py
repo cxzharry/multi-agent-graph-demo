@@ -273,6 +273,22 @@ class SyntheticManifestTests(unittest.TestCase):
 
 
 class BuildSnapshotTests(unittest.TestCase):
+    def test_synthetic_manifest_flow_id_reaches_snapshot(self):
+        state = fixture_state()
+        manifest = synthesize_manifest(state)
+
+        snapshot = build_snapshot(state, manifest, "wK")
+
+        self.assertEqual("auto-operational", snapshot.get("flowId"))
+
+    def test_preserves_authored_custom_flow_id_verbatim(self):
+        manifest = fixture_manifest()
+        manifest["flowId"] = "custom/Authored Flow:v2"
+
+        snapshot = build_snapshot(fixture_state(), manifest, "wK")
+
+        self.assertEqual("custom/Authored Flow:v2", snapshot.get("flowId"))
+
     def test_maps_exact_workspace_to_generic_snapshot_identity(self):
         snapshot = build_snapshot(fixture_state(), fixture_manifest(), "wK")
 

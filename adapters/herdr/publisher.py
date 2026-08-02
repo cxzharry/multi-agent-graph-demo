@@ -294,6 +294,7 @@ def build_snapshot(state: dict, manifest: dict, workspace_id: str) -> dict:
         "schemaVersion": "role-graph/v1",
         "scopeId": f"herdr:{workspace_id}",
         "runId": run_id,
+        "flowId": materialized["flowId"],
         "sequence": revision,
         "generatedAt": generated_at,
         "title": materialized.get(
