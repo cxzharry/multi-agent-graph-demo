@@ -1,0 +1,134 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "67366a7a486773dd168f2bbff5c3472703ea5617",
+  "candidate_tree": "4a6a47fcb06739fc62a24f026d58344015e3f031",
+  "passed": true,
+  "weighted_composite": 8.8,
+  "scores": {
+    "real_producer_flow_provenance": {
+      "score": 9,
+      "evidence": "A fresh direct probe called synthesize_manifest then build_snapshot and proved auto-operational is preserved exactly from synthetic manifest to snapshot. The same probe proved authored custom/Authored Flow:v2 is preserved verbatim. Both cases are also permanent publisher regressions in the 36-test suite."
+    },
+    "exact_ui_provenance_consumption": {
+      "score": 9,
+      "evidence": "The publisher snapshot contains materialized flowId, the UI derives synthetic only from snapshot.flowId === auto-operational, and a focused contract-stitch assertion verified that exact producer-to-consumer field path. Browser smoke confirms the resulting authored and synthetic modes."
+    },
+    "shape_independent_synthetic_hiding": {
+      "score": 9,
+      "evidence": "RoleNode now hides task and ID solely from data.synthetic with no startsWith or decode heuristic. Browser smoke proves both auto-hex generated content and opaque publisher-runtime content hide under auto-operational provenance."
+    },
+    "authored_identical_content_visibility": {
+      "score": 9,
+      "evidence": "Browser smoke publishes authored-custom and auto-operational snapshots containing identical auto-hex and opaque ID/task pairs; the authored snapshot retains every ID/task while the synthetic snapshot hides every pair."
+    },
+    "retained_full_integration_and_audit": {
+      "score": 8,
+      "evidence": "Publisher 36 tests, launcher 41 tests, Vitest 37 tests, production build, browser smoke, and git diff --check all passed. Lane/time/persona, custom manifest, loop/top-down/straight-link layout, selection, live updates, launcher lifecycle, workspace isolation, no-close, and all seven prior harness tree identities remain covered."
+    }
+  },
+  "criterion_evidence": {
+    "real_producer_flow_provenance": [
+      "direct_synthesize_manifest_build_snapshot_flowId: 2 cases passed",
+      "test_synthetic_manifest_flow_id_reaches_snapshot",
+      "test_preserves_authored_custom_flow_id_verbatim"
+    ],
+    "exact_ui_provenance_consumption": [
+      "build_snapshot emits materialized flowId",
+      "main.tsx checks snapshot flowId exact equality to auto-operational",
+      "producer_to_ui_contract_stitch: pass",
+      "browser authored-custom and auto-operational modes: pass"
+    ],
+    "shape_independent_synthetic_hiding": [
+      "RoleNode task and ID visibility depend only on data.synthetic",
+      "contract stitch rejects startsWith and decodeURIComponent heuristics",
+      "browser synthetic auto-hex and opaque ID/task pairs are absent"
+    ],
+    "authored_identical_content_visibility": [
+      "browser authored auto-hex ID/task pair remains exact",
+      "browser authored opaque ID/task pair remains exact"
+    ],
+    "retained_full_integration_and_audit": [
+      "python3 -B -m unittest adapters.herdr.test_publisher: 36 passed",
+      "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py: 41 passed",
+      "npm test -- --run: 4 files and 37 tests passed",
+      "npm run build: pass",
+      "node tests/browser-smoke.mjs: pass with scale 1.034",
+      "git diff --check: pass",
+      "all seven prior harness subtree checks before and after matrix: pass"
+    ]
+  },
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-end-to-end-flow-provenance",
+    "finding_receipt": "independent_review-g8.json",
+    "status": "resolved"
+  },
+  "verification": [
+    {
+      "command": "direct synthesize_manifest and build_snapshot flowId assertion",
+      "result": "pass",
+      "detail": "2 cases: auto-operational and custom/Authored Flow:v2"
+    },
+    {
+      "command": "producer-to-UI contract stitch assertion",
+      "result": "pass",
+      "detail": "publisher field, exact UI equality, synthetic-only RoleNode visibility, and heuristic absence"
+    },
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "36 tests"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "41 tests"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files, 37 tests"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Authored/synthetic collision, opaque synthetic content, persona, custom loop/layout, and runtime assertions passed; scale 1.034"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "no output"
+    }
+  ],
+  "superseded_evidence": {
+    "path": "plans/meta-harness-2026-08-02-provenance-recovery",
+    "composite": 8.8,
+    "reason": "P6 finding proved the producer path was not covered",
+    "preserved": true
+  },
+  "prior_harness_preservation": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {"audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add", "pre_matrix": "pass", "post_matrix": "pass"},
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {"audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb", "pre_matrix": "pass", "post_matrix": "pass"},
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {"audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37", "pre_matrix": "pass", "post_matrix": "pass"},
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {"audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b", "pre_matrix": "pass", "post_matrix": "pass"},
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": {"audit_tree": "53189bc2bd72067cf169ee84906cc94e32fc0239", "pre_matrix": "pass", "post_matrix": "pass"},
+    "plans/meta-harness-2026-08-02-persona-readability-recovery": {"audit_tree": "01c03937108feeda155d0f2c464abcd80d82f01a", "pre_matrix": "pass", "post_matrix": "pass"},
+    "plans/meta-harness-2026-08-02-provenance-recovery": {"audit_tree": "7c96047cca55128a681b5eadb257d6bf37fc79e4", "pre_matrix": "pass", "post_matrix": "pass"}
+  },
+  "dependency_state": {
+    "installed_by_run": false,
+    "package_files_identical_to_source": true,
+    "temporary_symlink_needed": false,
+    "detail": "A real worktree node_modules directory was already present; no installation, synchronization, or dependency-link mutation occurred."
+  },
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": []
+}

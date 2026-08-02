@@ -1,0 +1,63 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "DELIVER",
+  "locked": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "orchestration_mode": "local_controller",
+  "criteria": [
+    {
+      "id": "real_producer_flow_provenance",
+      "description": "A direct synthesize_manifest to build_snapshot probe preserves exact synthetic and authored custom flowId values",
+      "weight": 1
+    },
+    {
+      "id": "exact_ui_provenance_consumption",
+      "description": "The UI marks nodes synthetic only when the actual snapshot flowId is exactly auto-operational",
+      "weight": 1
+    },
+    {
+      "id": "shape_independent_synthetic_hiding",
+      "description": "Synthetic IDs and tasks hide for auto-shaped and opaque content with no ID/task shape or decoding heuristic",
+      "weight": 1
+    },
+    {
+      "id": "authored_identical_content_visibility",
+      "description": "Authored custom nodes with identical auto-shaped and opaque ID/task content remain fully visible",
+      "weight": 1
+    },
+    {
+      "id": "retained_full_integration_and_audit",
+      "description": "Persona/time, custom/loop/layout, launcher/runtime, full matrix, and every prior harness audit contract remain correct",
+      "weight": 1
+    }
+  ],
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-end-to-end-flow-provenance",
+    "receipt": "independent_review-g8.json"
+  },
+  "superseded_evidence": {
+    "path": "plans/meta-harness-2026-08-02-provenance-recovery",
+    "score": 8.8,
+    "reason": "P6 proved the run used UI fixtures without a real publisher flowId contract"
+  },
+  "prior_harness_audit_trees": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": "e5614096f9b89dc28f0256979ac0fac564cc8add",
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": "b43deffeb76a4c23d357c74c516237d3690de6fb",
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": "f22266db22dd1eab9b7495455a2de29e90f8fe37",
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": "3236642651c3f9418df0655f83c318d926ef6c4b",
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": "53189bc2bd72067cf169ee84906cc94e32fc0239",
+    "plans/meta-harness-2026-08-02-persona-readability-recovery": "01c03937108feeda155d0f2c464abcd80d82f01a",
+    "plans/meta-harness-2026-08-02-provenance-recovery": "7c96047cca55128a681b5eadb257d6bf37fc79e4"
+  },
+  "frozen_comparison": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 8,
+  "max_iterations": 1,
+  "total_iterations": 1,
+  "best_iteration": 1,
+  "best_composite": 8.8,
+  "composite_trajectory": [{"iter": 1, "composite": 8.8}],
+  "final_scores": {
+    "real_producer_flow_provenance": 9,
+    "exact_ui_provenance_consumption": 9,
+    "shape_independent_synthetic_hiding": 9,
+    "authored_identical_content_visibility": 9,
+    "retained_full_integration_and_audit": 8
+  },
+  "routed_inputs": [
+    {"source": "P6", "finding_id": "p6-end-to-end-flow-provenance", "finding_receipt": "independent_review-g8.json", "status": "resolved"}
+  ],
+  "product_findings": [],
+  "product_corrections": [
+    {"accepted_commit": "e957827c11d17f9fdd84c5ac3d11ff5425b688af", "integrated_commit": "4cdcbdf70b6d9ee50755b2e2a3c76ccf8352b5b5", "summary": "Preserve exact manifest flowId in real publisher snapshots"},
+    {"accepted_commit": "dda3b0d60dcf3adfc99df18b3fe789f002b80e95", "integrated_commit": "67366a7a486773dd168f2bbff5c3472703ea5617", "summary": "Hide every synthetic ID/task solely from trusted provenance while retaining identical authored content"}
+  ],
+  "superseded_evidence": {
+    "path": "plans/meta-harness-2026-08-02-provenance-recovery",
+    "composite": 8.8,
+    "preserved": true,
+    "reason": "P6 proved it lacked real producer evidence"
+  },
+  "prior_harnesses": {
+    "plans/meta-harness-2026-08-02-manifestless-viewer": {"audit_tree": "e5614096f9b89dc28f0256979ac0fac564cc8add", "modified": false},
+    "plans/meta-harness-2026-08-02-p1-anchor-recovery": {"audit_tree": "b43deffeb76a4c23d357c74c516237d3690de6fb", "modified": false},
+    "plans/meta-harness-2026-08-02-live-runtime-recovery": {"audit_tree": "f22266db22dd1eab9b7495455a2de29e90f8fe37", "modified": false},
+    "plans/meta-harness-2026-08-02-query-strictness-recovery": {"audit_tree": "3236642651c3f9418df0655f83c318d926ef6c4b", "modified": false},
+    "plans/meta-harness-2026-08-02-cold-query-order-recovery": {"audit_tree": "53189bc2bd72067cf169ee84906cc94e32fc0239", "modified": false},
+    "plans/meta-harness-2026-08-02-persona-readability-recovery": {"audit_tree": "01c03937108feeda155d0f2c464abcd80d82f01a", "modified": false},
+    "plans/meta-harness-2026-08-02-provenance-recovery": {"audit_tree": "7c96047cca55128a681b5eadb257d6bf37fc79e4", "modified": false}
+  },
+  "frozen_baselines": {
+    "superpowers_compact_seconds": 152,
+    "multi_module_seconds": 1009,
+    "comparison_only": true,
+    "rerun": false,
+    "modified": false
+  },
+  "trace": {
+    "status": "emitted",
+    "path": "/Users/haido/.claude/traces/runs/20260802-end-to-end-provenance-recovery-integration-g9.json",
+    "generator": "/Users/haido/.agents/skills/meta-harness/scripts/extract-trace.py"
+  },
+  "completed_at_utc": "2026-08-02T10:23:02Z"
+}

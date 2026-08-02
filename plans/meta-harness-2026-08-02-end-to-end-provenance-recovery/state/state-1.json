@@ -1,0 +1,31 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "67366a7a486773dd168f2bbff5c3472703ea5617",
+  "candidate_tree": "4a6a47fcb06739fc62a24f026d58344015e3f031",
+  "prior_scores": {
+    "superseded_run": "plans/meta-harness-2026-08-02-provenance-recovery",
+    "composite": 8.8,
+    "status": "superseded_by_p6_finding"
+  },
+  "scores": {
+    "real_producer_flow_provenance": 9,
+    "exact_ui_provenance_consumption": 9,
+    "shape_independent_synthetic_hiding": 9,
+    "authored_identical_content_visibility": 9,
+    "retained_full_integration_and_audit": 8
+  },
+  "weighted_composite": 8.8,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "Confirmed: real snapshots preserve exact manifest flow provenance and RoleNode hides solely from trusted synthetic data, closing the producer-to-UI gap without regressions",
+  "what_not_to_retry": [
+    "Do not run another iteration after SUCCESS",
+    "Do not accept browser-only provenance evidence without the producer probe",
+    "Do not infer hiding from ID/task shape",
+    "Do not expose synthetic auto-shaped or opaque content or hide authored identical content",
+    "Do not modify superseded or other prior harness histories or frozen baselines",
+    "Do not install, sync, push, deliver, modify source main or Herdr Orchestrator, close panes, operate live panes, or self-review as P6"
+  ],
+  "stop_condition": "SUCCESS"
+}

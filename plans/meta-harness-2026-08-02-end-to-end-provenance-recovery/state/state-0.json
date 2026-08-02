@@ -1,0 +1,38 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "gate": "PROCEED",
+  "intent": "DELIVER",
+  "agent_split": "No split",
+  "agent_split_reason": "P5 must evaluate the accepted producer and UI corrections as one end-to-end contract without self-review as P6",
+  "candidate_commit": "67366a7a486773dd168f2bbff5c3472703ea5617",
+  "candidate_tree": "4a6a47fcb06739fc62a24f026d58344015e3f031",
+  "routed_input": {
+    "source": "P6",
+    "finding_id": "p6-end-to-end-flow-provenance",
+    "finding_receipt": "independent_review-g8.json",
+    "failure_class": "implementation",
+    "expected": "Real publisher snapshots carry exact trusted flow provenance and the UI hides all synthetic internals solely from that provenance while authored identical content stays visible",
+    "actual": "Generation 8 UI fixtures injected flowId manually while real build_snapshot omitted it, and RoleNode still selected hiding through node/task shape heuristics"
+  },
+  "prior_scores": {
+    "superseded_run": "plans/meta-harness-2026-08-02-provenance-recovery",
+    "composite": 8.8,
+    "status": "superseded_by_p6_finding"
+  },
+  "failure_class": null,
+  "targeted_criteria": [
+    "real_producer_flow_provenance",
+    "exact_ui_provenance_consumption",
+    "shape_independent_synthetic_hiding",
+    "authored_identical_content_visibility"
+  ],
+  "hypothesis": "Preserving manifest flowId in real snapshots and making RoleNode hide all internals solely from trusted synthetic data closes the producer-to-UI provenance gap",
+  "what_not_to_retry": [
+    "Do not accept browser-only fixture evidence without a real producer probe",
+    "Do not infer hiding behavior from node ID or task shape",
+    "Do not hide authored identical content or expose synthetic opaque content",
+    "Do not modify superseded or other prior harness histories or frozen baselines",
+    "Do not install, sync, push, deliver, modify source main or Herdr Orchestrator, close panes, operate live panes, or self-review as P6"
+  ]
+}
