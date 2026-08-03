@@ -341,6 +341,67 @@ def publish_snapshot(
             )
 
 
+def heartbeat_presence(
+    endpoint: str,
+    token: str | None,
+    snapshot: dict,
+) -> None:
+    """POST one compact in-memory presence heartbeat."""
+    suffix = "/api/snapshots"
+    if not endpoint.endswith(suffix):
+        raise PublisherError("snapshot endpoint must end with /api/snapshots")
+    payload = {
+        key: snapshot[key]
+        for key in ("scopeId", "runId", "spaceName", "shortName")
+        if key in snapshot
+    }
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(
+        f"{endpoint[:-len(suffix)]}/api/presence",
+        data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        if not 200 <= response.status < 300:
+            raise PublisherError(
+                f"viewer rejected presence with HTTP {response.status}"
+            )
+
+
+def heartbeat_control_run(
+    state_path: Path,
+    workspace_id: str,
+    space_name: str,
+    endpoint: str,
+    token: str | None,
+) -> bool:
+    """Heartbeat one active control run and ignore terminal runs."""
+    state = _read_json(state_path)
+    if state.get("workspace_id") != workspace_id:
+        raise PublisherError(
+            "workspace_id does not match the supplied workspace state"
+        )
+    run = state.get("run", {})
+    if str(run.get("status", "")).upper() != "ACTIVE":
+        return False
+    run_id = run.get("contract_id")
+    if not isinstance(run_id, str) or not run_id:
+        raise PublisherError("run.contract_id is required")
+    heartbeat_presence(
+        endpoint,
+        token,
+        {
+            "scopeId": f"herdr:{workspace_id}",
+            "runId": run_id,
+            "spaceName": _space_name(space_name),
+        },
+    )
+    return True
+
+
 def publish_if_changed(
     state_path: Path,
     manifest_path: Path | None,
@@ -561,7 +622,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--token")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--replace-current", action="store_true")
-    parser.add_argument("--interval", type=_positive_interval, default=1.0)
+    parser.add_argument("--interval", type=_positive_interval, default=2.0)
     return parser
 
 
@@ -586,6 +647,13 @@ def main() -> int:
             if revision != last_revision:
                 print(json.dumps({"status": "published", "revision": revision}))
             last_revision = revision
+            heartbeat_control_run(
+                args.state,
+                args.workspace_id,
+                args.space_name,
+                args.endpoint,
+                args.token,
+            )
         except (OSError, PublisherError, json.JSONDecodeError) as error:
             print(
                 json.dumps({"status": "error", "error": str(error)}),

@@ -12,6 +12,7 @@ from adapters.herdr.publisher import (
     PublisherError,
     _parser,
     build_snapshot,
+    heartbeat_control_run,
     main,
     publish_if_changed,
     publish_snapshot,
@@ -601,6 +602,53 @@ class BuildSnapshotTests(unittest.TestCase):
 
 
 class PublishingTests(unittest.TestCase):
+    def test_active_control_run_heartbeats_exact_snapshot_identity(self):
+        state = fixture_state()
+        state["run"]["status"] = "ACTIVE"
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            with mock.patch(
+                "adapters.herdr.publisher.heartbeat_presence"
+            ) as heartbeat:
+                active = heartbeat_control_run(
+                    state_path,
+                    "wK",
+                    "herdr-orchestrator",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    "secret",
+                )
+
+        self.assertTrue(active)
+        self.assertEqual(
+            {
+                "scopeId": "herdr:wK",
+                "runId": "role-graph-live-viewer-20260731",
+                "spaceName": "herdr-orchestrator",
+            },
+            heartbeat.call_args.args[2],
+        )
+
+    def test_terminal_control_run_does_not_heartbeat(self):
+        state = fixture_state()
+        state["run"]["status"] = "DONE"
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            with mock.patch(
+                "adapters.herdr.publisher.heartbeat_presence"
+            ) as heartbeat:
+                active = heartbeat_control_run(
+                    state_path,
+                    "wK",
+                    "herdr-orchestrator",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                )
+
+        self.assertFalse(active)
+        heartbeat.assert_not_called()
+
     def test_rejects_empty_space_name_before_unchanged_revision_shortcut(self):
         with tempfile.TemporaryDirectory() as directory:
             state_path = Path(directory) / "state.json"
@@ -655,6 +703,8 @@ class PublishingTests(unittest.TestCase):
             "adapters.herdr.publisher.publish_if_changed",
             side_effect=[42, 43],
         ) as publish, mock.patch(
+            "adapters.herdr.publisher.heartbeat_control_run",
+        ) as heartbeat, mock.patch(
             "adapters.herdr.publisher.time.sleep",
             side_effect=[None, KeyboardInterrupt],
         ):
@@ -669,6 +719,7 @@ class PublishingTests(unittest.TestCase):
             ["herdr-orchestrator", "herdr-orchestrator"],
             [call.kwargs["space_name"] for call in publish.call_args_list],
         )
+        self.assertEqual(2, heartbeat.call_count)
 
     def test_synthetic_mode_publishes_without_manifest_file(self):
         with tempfile.TemporaryDirectory() as directory:
