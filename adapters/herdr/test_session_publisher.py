@@ -1,7 +1,11 @@
 import copy
 import json
+import os
 import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from adapters.herdr.session_publisher import (
@@ -15,6 +19,8 @@ from adapters.herdr.session_publisher import (
 
 
 P1_SESSION = "019fb24f-f36f-7642-8679-5c6405fb3889"
+SCRIPT_PATH = Path(__file__).with_name("session_publisher.py").resolve()
+REPOSITORY_ROOT = Path(__file__).parents[2]
 
 
 def agent(
@@ -66,6 +72,51 @@ class WorkspaceSelectionTests(unittest.TestCase):
             self.assertEqual([], list_agents())
 
         self.assertEqual(("herdr", "agent", "list"), run.call_args.args[0])
+
+
+class LauncherContractTests(unittest.TestCase):
+    def test_absolute_path_help_imports_without_repository_pythonpath(self):
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [sys.executable, "-B", str(SCRIPT_PATH), "--help"],
+                cwd=directory,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("usage:", result.stdout)
+
+    def test_absolute_path_parser_accepts_launcher_watch_flag(self):
+        env = {**os.environ, "PYTHONPATH": str(REPOSITORY_ROOT)}
+        probe = (
+            "import runpy; "
+            f"values = runpy.run_path({str(SCRIPT_PATH)!r}); "
+            "args = values['_parser']().parse_args(["
+            "'--workspace-id', 'wK', "
+            "'--space-name', 'herdr-orchestrator', "
+            f"'--p1-session-id', {P1_SESSION!r}, "
+            "'--p1-pane-id', 'wK:p1', "
+            "'--endpoint', 'http://127.0.0.1:4173/api/snapshots', "
+            "'--watch']); "
+            "print(args.watch)"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [sys.executable, "-B", "-c", probe],
+                cwd=directory,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("True", result.stdout.strip())
 
 
 class SessionSnapshotTests(unittest.TestCase):

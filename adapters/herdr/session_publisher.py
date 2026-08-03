@@ -10,6 +10,10 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from adapters.herdr.publisher import (
     PublisherError,
@@ -192,6 +196,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--p1-pane-id", required=True)
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--token")
+    parser.add_argument("--watch", action="store_true")
     parser.add_argument("--interval", type=_positive_interval, default=2.0)
     return parser
 
