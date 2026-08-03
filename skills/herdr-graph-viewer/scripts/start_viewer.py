@@ -49,6 +49,11 @@ class SelectedState(NamedTuple):
     run_id: str
 
 
+class P1Identity(NamedTuple):
+    pane_id: str
+    session_id: str
+
+
 class ManifestSelection(NamedTuple):
     mode: str
     path: Path | None
@@ -82,13 +87,22 @@ def _p1_pane(state: dict[str, Any]) -> str | None:
     return p1.get("pane_id") if isinstance(p1.get("pane_id"), str) else None
 
 
+def _p1_session(state: dict[str, Any]) -> str | None:
+    controller = state.get("controller", {})
+    if isinstance(controller.get("session_id"), str):
+        return controller["session_id"]
+    p1 = state.get("slots", {}).get("P1", {})
+    return p1.get("session_id") if isinstance(p1.get("session_id"), str) else None
+
+
 def select_state(
     runs_root: Path,
     workspace_id: str,
-    current_pane_id: str,
+    current_p1_pane_id: str,
+    current_p1_session_id: str = "",
     *,
     explicit: Path | None = None,
-) -> SelectedState:
+) -> SelectedState | None:
     if explicit is not None:
         return _load_state(explicit.expanduser().resolve(), workspace_id)
 
@@ -101,25 +115,13 @@ def select_state(
             if error.code != "workspace_mismatch":
                 continue
 
-    if not candidates:
-        raise LauncherError(
-            "no_active_run",
-            f"No workspace-state.json found for {workspace_id}",
-            search_root=str(workspace_root),
-        )
-
-    pane_matches = [item for item in candidates if _p1_pane(item.value) == current_pane_id]
-    if len(pane_matches) == 1:
-        return pane_matches[0]
-    if len(candidates) == 1:
-        return candidates[0]
-
-    ambiguous = pane_matches or candidates
-    raise LauncherError(
-        "ambiguous_run",
-        f"Multiple Herdr runs match workspace {workspace_id}; pass --state",
-        candidates=[str(item.path) for item in ambiguous],
-    )
+    matches = [
+        item
+        for item in candidates
+        if _p1_pane(item.value) == current_p1_pane_id
+        and _p1_session(item.value) == current_p1_session_id
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def probe_viewer(port: int) -> str:
@@ -135,6 +137,7 @@ def probe_viewer(port: int) -> str:
             and data.get("schemaVersion") == "role-graph/v1"
             and isinstance(capabilities, list)
             and "space-name-summary" in capabilities
+            and "session-presence" in capabilities
         ):
             return "viewer"
         return "occupied"
@@ -249,6 +252,29 @@ def publisher_matches(
     return False
 
 
+def session_publisher_matches(
+    process_info: dict[str, Any],
+    workspace_id: str,
+    space_name: str,
+    p1_session_id: str,
+    p1_pane_id: str,
+    endpoint: str,
+    watch: bool,
+) -> bool:
+    for argv in _publisher_argvs(process_info):
+        if (
+            any(item.endswith("adapters/herdr/session_publisher.py") for item in argv)
+            and _argv_value(argv, "--workspace-id") == workspace_id
+            and _argv_value(argv, "--space-name") == space_name
+            and _argv_value(argv, "--p1-session-id") == p1_session_id
+            and _argv_value(argv, "--p1-pane-id") == p1_pane_id
+            and _argv_value(argv, "--endpoint") == endpoint
+            and ("--watch" in argv) is watch
+        ):
+            return True
+    return False
+
+
 def _publisher_matches_state(
     process_info: dict[str, Any],
     state_path: str,
@@ -303,6 +329,35 @@ def _herdr(*args: str) -> dict[str, Any]:
 
 def _result_value(response: dict[str, Any], key: str) -> Any:
     return response.get("result", {}).get(key)
+
+
+def _resolve_p1_identity(workspace_id: str) -> P1Identity:
+    agents = _result_value(_herdr("agent", "list"), "agents")
+    matches: list[P1Identity] = []
+    if isinstance(agents, list):
+        for agent in agents:
+            if (
+                not isinstance(agent, dict)
+                or agent.get("workspace_id") != workspace_id
+                or agent.get("name") != "p1_orchestrator"
+            ):
+                continue
+            pane_id = agent.get("pane_id")
+            session = agent.get("agent_session")
+            session_id = session.get("value") if isinstance(session, dict) else None
+            if (
+                isinstance(pane_id, str)
+                and pane_id
+                and isinstance(session_id, str)
+                and session_id
+            ):
+                matches.append(P1Identity(pane_id, session_id))
+    if len(matches) != 1:
+        raise LauncherError(
+            "p1_identity_error",
+            f"Cannot resolve one active P1 identity for workspace {workspace_id}",
+        )
+    return matches[0]
 
 
 def _resolve_space_name(workspace_id: str) -> str:
@@ -382,7 +437,7 @@ def _wait_for_snapshot(
     port: int,
     scope_id: str,
     run_id: str,
-    expected_sequence: int,
+    expected_sequence: int | None,
     expected_space_name: str,
     timeout: float = 20.0,
 ) -> dict[str, Any]:
@@ -393,17 +448,18 @@ def _wait_for_snapshot(
             value
             and value.get("scopeId") == scope_id
             and value.get("runId") == run_id
-            and value.get("sequence") == expected_sequence
+            and (
+                expected_sequence is None
+                or value.get("sequence") == expected_sequence
+            )
             and value.get("spaceName") == expected_space_name
         ):
             return value
         time.sleep(0.25)
     raise LauncherError(
         "publisher_start_failed",
-        (
-            f"No snapshot published for {scope_id}/{run_id} at sequence "
-            f"{expected_sequence} with spaceName {expected_space_name!r}"
-        ),
+        f"No matching snapshot published for {scope_id}/{run_id} "
+        f"with spaceName {expected_space_name!r}",
     )
 
 
@@ -471,6 +527,39 @@ def _find_publisher_for_state(
         info = _result_value(response, "process_info") or {}
         if isinstance(info, dict) and _publisher_matches_state(
             info, str(state_path), workspace_id, endpoint, True
+        ):
+            return pane_id
+    return None
+
+
+def _find_session_publisher(
+    workspace_id: str,
+    space_name: str,
+    p1_session_id: str,
+    p1_pane_id: str,
+    endpoint: str,
+) -> str | None:
+    for pane in _workspace_panes(workspace_id):
+        pane_id = pane.get("pane_id")
+        if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
+            continue
+        try:
+            response = _herdr("pane", "process-info", "--pane", pane_id)
+        except LauncherError as error:
+            if error.details.get("invalid_response"):
+                raise
+            if error.code in {"herdr_error", "herdr_timeout"}:
+                continue
+            raise
+        info = _result_value(response, "process_info") or {}
+        if isinstance(info, dict) and session_publisher_matches(
+            info,
+            workspace_id,
+            space_name,
+            p1_session_id,
+            p1_pane_id,
+            endpoint,
+            True,
         ):
             return pane_id
     return None
@@ -649,44 +738,86 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
         raise LauncherError("not_in_herdr", "Herdr workspace and pane IDs are required")
 
     repo = args.repo.expanduser().resolve()
-    if not (repo / "server.js").is_file() or not (
-        repo / "adapters/herdr/publisher.py"
-    ).is_file():
+    if not (repo / "server.js").is_file():
         raise LauncherError("missing_viewer", f"Viewer repo is incomplete: {repo}")
 
     with _workspace_launch_lock(args.runs_root, workspace_id):
-        selected = select_state(
-            args.runs_root,
-            workspace_id,
-            current_pane,
-            explicit=args.state,
-        )
-        p1_pane = _p1_pane(selected.value)
-        if not p1_pane:
-            raise LauncherError(
-                "invalid_state", f"State has no usable P1 pane binding: {selected.path}"
+        current_p1: P1Identity | None = None
+        if args.state is not None:
+            selected = select_state(
+                args.runs_root,
+                workspace_id,
+                current_pane,
+                "",
+                explicit=args.state,
             )
-        selection = _resolve_manifest(selected, args.manifest)
-        revision = selected.value.get("revision")
-        if not isinstance(revision, int):
+        else:
+            current_p1 = _resolve_p1_identity(workspace_id)
+            selected = select_state(
+                args.runs_root,
+                workspace_id,
+                current_p1.pane_id,
+                current_p1.session_id,
+            )
+
+        session_mode = selected is None
+        if session_mode:
+            if current_p1 is None:
+                raise LauncherError(
+                    "p1_identity_error",
+                    f"Cannot resolve current P1 identity for workspace {workspace_id}",
+                )
+            p1_pane = current_p1.pane_id
+            p1_session_id = current_p1.session_id
+            run_id = p1_session_id
+            selection: ManifestSelection | None = None
+            revision: int | None = None
+            publisher_script = repo / "adapters/herdr/session_publisher.py"
+        else:
+            p1_pane = _p1_pane(selected.value)
+            if not p1_pane:
+                raise LauncherError(
+                    "invalid_state",
+                    f"State has no usable P1 pane binding: {selected.path}",
+                )
+            p1_session_id = ""
+            run_id = selected.run_id
+            selection = _resolve_manifest(selected, args.manifest)
+            revision = selected.value.get("revision")
+            if not isinstance(revision, int):
+                raise LauncherError(
+                    "invalid_state",
+                    f"State has no integer revision: {selected.path}",
+                )
+            publisher_script = repo / "adapters/herdr/publisher.py"
+        if not publisher_script.is_file():
             raise LauncherError(
-                "invalid_state", f"State has no integer revision: {selected.path}"
+                "missing_viewer", f"Viewer repo is incomplete: {repo}"
             )
         space_name = _resolve_space_name(workspace_id)
         scope_id = f"herdr:{workspace_id}"
         port, server_reused = select_port(probe_viewer, args.port_start, args.port_end)
         server_pane: str | None = None
         endpoint = f"http://127.0.0.1:{port}/api/snapshots"
-        publisher_pane = _find_publisher(
-            workspace_id, space_name, selected.path, selection, endpoint
-        )
-        publisher_reused = publisher_pane is not None
         replace_current = False
-        if publisher_pane is None:
-            publisher_pane = _find_publisher_for_state(
-                workspace_id, selected.path, endpoint
+        if session_mode:
+            publisher_pane = _find_session_publisher(
+                workspace_id,
+                space_name,
+                p1_session_id,
+                p1_pane,
+                endpoint,
             )
-            replace_current = publisher_pane is not None
+        else:
+            publisher_pane = _find_publisher(
+                workspace_id, space_name, selected.path, selection, endpoint
+            )
+            if publisher_pane is None:
+                publisher_pane = _find_publisher_for_state(
+                    workspace_id, selected.path, endpoint
+                )
+                replace_current = publisher_pane is not None
+        publisher_reused = publisher_pane is not None and not replace_current
         replace_equal_sequence = replace_current or not server_reused
 
         if not server_reused:
@@ -728,17 +859,35 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     direction="down" if server_pane is not None else "right",
                     ratio="0.5" if server_pane is not None else "0.32",
                 )
-            topology_args = (
-                ["--synthesize"]
-                if selection.mode == "synthetic"
-                else ["--manifest", str(selection.path)]
-            )
-            command = " ".join(
-                shlex.quote(value)
-                for value in [
+            if session_mode:
+                command_values = [
                     "python3",
                     "-B",
-                    str(repo / "adapters/herdr/publisher.py"),
+                    str(publisher_script),
+                    "--workspace-id",
+                    workspace_id,
+                    "--space-name",
+                    space_name,
+                    "--p1-session-id",
+                    p1_session_id,
+                    "--p1-pane-id",
+                    p1_pane,
+                    "--endpoint",
+                    endpoint,
+                    "--watch",
+                    "--interval",
+                    "2",
+                ]
+            else:
+                topology_args = (
+                    ["--synthesize"]
+                    if selection.mode == "synthetic"
+                    else ["--manifest", str(selection.path)]
+                )
+                command_values = [
+                    "python3",
+                    "-B",
+                    str(publisher_script),
                     "--state",
                     str(selected.path),
                     *topology_args,
@@ -753,21 +902,28 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     "--interval",
                     "2",
                 ]
+            command = " ".join(
+                shlex.quote(value)
+                for value in command_values
             )
             _run_in_pane(publisher_pane, command)
 
         snapshot = _wait_for_snapshot(
-            port, scope_id, selected.run_id, revision, space_name
+            port, scope_id, run_id, revision, space_name
         )
     return {
         "status": "ready",
         "workspace_id": workspace_id,
         "space_name": space_name,
-        "run_id": selected.run_id,
-        "state": str(selected.path),
-        "mode": selection.mode,
-        "manifest": str(selection.path) if selection.path is not None else None,
-        "url": viewer_url(port, scope_id, selected.run_id),
+        "run_id": run_id,
+        "state": str(selected.path) if selected is not None else None,
+        "mode": "session" if session_mode else selection.mode,
+        "manifest": (
+            str(selection.path)
+            if selection is not None and selection.path is not None
+            else None
+        ),
+        "url": viewer_url(port, scope_id, run_id),
         "sequence": snapshot.get("sequence"),
         "server": {"port": port, "pane_id": server_pane, "reused": server_reused},
         "publisher": {"pane_id": publisher_pane, "reused": publisher_reused},

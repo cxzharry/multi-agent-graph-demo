@@ -50,6 +50,7 @@ class StartViewerTest(unittest.TestCase):
         workspace: str,
         pane: str,
         run_id: str,
+        session_id: str = "p1-session",
         revision: int = 3,
         role_graph_manifest: str | None = None,
     ) -> Path:
@@ -65,8 +66,18 @@ class StartViewerTest(unittest.TestCase):
                     "workspace_id": workspace,
                     "revision": revision,
                     "run": run,
-                    "controller": {"pane_id": pane, "workspace_id": workspace},
-                    "slots": {"P1": {"pane_id": pane, "workspace_id": workspace}},
+                    "controller": {
+                        "pane_id": pane,
+                        "session_id": session_id,
+                        "workspace_id": workspace,
+                    },
+                    "slots": {
+                        "P1": {
+                            "pane_id": pane,
+                            "session_id": session_id,
+                            "workspace_id": workspace,
+                        }
+                    },
                 }
             ),
             encoding="utf-8",
@@ -248,21 +259,39 @@ class StartViewerTest(unittest.TestCase):
                 expected.append(("pane", "process-info", "--pane", "publisher"))
             self.assertEqual(commands, expected)
 
-    def test_selects_state_bound_to_current_p1_pane(self):
+    def test_selects_state_bound_to_current_p1_pane_and_session(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             current = self.write_state(
-                root, "current", workspace="w1", pane="w1:p1", run_id="current-run"
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                session_id="current-session",
+                run_id="current-run",
             )
             self.write_state(
-                root, "older", workspace="w1", pane="w1:p9", run_id="older-run"
+                root,
+                "stale",
+                workspace="w1",
+                pane="w1:p1",
+                session_id="stale-session",
+                run_id="stale-run",
             )
             self.write_state(
                 root, "foreign", workspace="w2", pane="w2:p1", run_id="foreign-run"
             )
 
-            selected = launcher.select_state(root, "w1", "w1:p1")
+            try:
+                selected = launcher.select_state(
+                    root,
+                    "w1",
+                    "w1:p1",
+                    "current-session",
+                )
+            except (TypeError, launcher.LauncherError) as error:
+                self.fail(f"pane-and-session selection is unavailable: {error}")
 
             self.assertEqual(selected.path, current.resolve())
             self.assertEqual(selected.run_id, "current-run")
@@ -301,25 +330,57 @@ class StartViewerTest(unittest.TestCase):
 
                 self.assertEqual(raised.exception.code, "workspace_selection_error")
 
-    def test_refuses_to_guess_between_multiple_runs(self):
+    def test_stale_states_do_not_fall_back_by_pane_or_candidate_count(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            first = self.write_state(
-                root, "first", workspace="w1", pane="w1:p2", run_id="first-run"
-            )
-            second = self.write_state(
-                root, "second", workspace="w1", pane="w1:p3", run_id="second-run"
+            self.write_state(
+                root,
+                "stale",
+                workspace="w1",
+                pane="w1:p1",
+                session_id="stale-session",
+                run_id="stale-run",
             )
 
-            with self.assertRaises(launcher.LauncherError) as raised:
-                launcher.select_state(root, "w1", "w1:p1")
+            try:
+                selected = launcher.select_state(
+                    root,
+                    "w1",
+                    "w1:p1",
+                    "current-session",
+                )
+            except (TypeError, launcher.LauncherError) as error:
+                self.fail(f"stale-state rejection is unavailable: {error}")
 
-            self.assertEqual(raised.exception.code, "ambiguous_run")
-            self.assertEqual(
-                set(raised.exception.details["candidates"]),
-                {str(first.resolve()), str(second.resolve())},
+            self.assertIsNone(selected)
+
+    def test_explicit_state_remains_exact_despite_current_p1_identity(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            explicit = self.write_state(
+                root,
+                "explicit",
+                workspace="w1",
+                pane="w1:p9",
+                session_id="historical-session",
+                run_id="explicit-run",
             )
+
+            try:
+                selected = launcher.select_state(
+                    root,
+                    "w1",
+                    "w1:p1",
+                    "current-session",
+                    explicit=explicit,
+                )
+            except TypeError as error:
+                self.fail(f"exact explicit selection is unavailable: {error}")
+
+            self.assertEqual(selected.path, explicit.resolve())
+            self.assertEqual(selected.run_id, "explicit-run")
 
     def test_rejects_explicit_state_from_another_workspace(self):
         launcher = self.require_launcher()
@@ -803,7 +864,7 @@ class StartViewerTest(unittest.TestCase):
         self.assertEqual(found["sequence"], 3)
         self.assertEqual(found["spaceName"], "herdr-orchestrator")
 
-    def test_viewer_probe_requires_space_name_summary_capability(self):
+    def test_viewer_probe_requires_space_name_summary_and_session_presence(self):
         launcher = self.require_launcher()
 
         class Response:
@@ -842,6 +903,22 @@ class StartViewerTest(unittest.TestCase):
                 }
             ),
         ):
+            self.assertEqual(launcher.probe_viewer(4173), "occupied")
+
+        with mock.patch.object(
+            launcher.urllib.request,
+            "urlopen",
+            return_value=response_for(
+                {
+                    "service": "herdr-role-graph-viewer",
+                    "schemaVersion": "role-graph/v1",
+                    "capabilities": [
+                        "space-name-summary",
+                        "session-presence",
+                    ],
+                }
+            ),
+        ):
             self.assertEqual(launcher.probe_viewer(4173), "viewer")
 
         with mock.patch.object(
@@ -850,6 +927,49 @@ class StartViewerTest(unittest.TestCase):
             return_value=response_for([{"id": "graph"}]),
         ):
             self.assertEqual(launcher.probe_viewer(4173), "occupied")
+
+    def test_session_publisher_match_requires_exact_local_identity(self):
+        launcher = self.require_launcher()
+        matcher = getattr(launcher, "session_publisher_matches", None)
+        self.assertIsNotNone(matcher, "session publisher matching is missing")
+        if matcher is None:
+            return
+        process_info = {
+            "foreground_processes": [
+                {
+                    "cmdline": (
+                        "python3 -B adapters/herdr/session_publisher.py "
+                        "--workspace-id w1 --space-name herdr-orchestrator "
+                        "--p1-session-id current-session --p1-pane-id w1:p1 "
+                        "--endpoint http://127.0.0.1:4173/api/snapshots "
+                        "--watch --interval 2"
+                    )
+                }
+            ]
+        }
+
+        self.assertTrue(
+            matcher(
+                process_info,
+                "w1",
+                "herdr-orchestrator",
+                "current-session",
+                "w1:p1",
+                "http://127.0.0.1:4173/api/snapshots",
+                True,
+            )
+        )
+        self.assertFalse(
+            matcher(
+                process_info,
+                "w1",
+                "herdr-orchestrator",
+                "stale-session",
+                "w1:p1",
+                "http://127.0.0.1:4173/api/snapshots",
+                True,
+            )
+        )
 
     def test_legacy_viewer_is_skipped_for_next_free_port(self):
         launcher = self.require_launcher()
@@ -1167,6 +1287,132 @@ class StartViewerTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, "herdr_error")
         self.assertEqual(str(raised.exception), "pane split returned no pane_id")
 
+    def test_no_matching_control_state_launches_current_session_publisher(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            (repo / "adapters/herdr").mkdir(parents=True)
+            (repo / "server.js").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            (repo / "adapters/herdr/session_publisher.py").write_text(
+                "", encoding="utf-8"
+            )
+            calls: list[tuple[str, ...]] = []
+            commands: dict[str, str] = {}
+
+            def fake_herdr(*args):
+                calls.append(args)
+                if args[:2] == ("agent", "list"):
+                    return {
+                        "result": {
+                            "agents": [
+                                {
+                                    "workspace_id": "w2",
+                                    "pane_id": "w2:p1",
+                                    "name": "p1_orchestrator",
+                                    "agent_session": {
+                                        "kind": "id",
+                                        "value": "foreign-session",
+                                    },
+                                },
+                                {
+                                    "workspace_id": "w1",
+                                    "pane_id": "w1:p1",
+                                    "name": "p1_orchestrator",
+                                    "agent_session": {
+                                        "kind": "id",
+                                        "value": "019fb24f-f36f-7642-8679-5c6405fb3889",
+                                    },
+                                },
+                            ]
+                        }
+                    }
+                if args[:2] == ("workspace", "list"):
+                    return self.workspace_list()
+                if args[:2] == ("pane", "list"):
+                    return {"result": {"panes": []}}
+                if args[:2] == ("pane", "split"):
+                    return {"result": {"pane": {"pane_id": "publisher"}}}
+                if args[:2] == ("pane", "rename"):
+                    return {"result": {}}
+                if args[:2] == ("pane", "run"):
+                    commands[args[2]] = args[3]
+                    return {"result": {}}
+                raise AssertionError(args)
+
+            args = Namespace(
+                state=None,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p6",
+                },
+                clear=True,
+            ), mock.patch.object(
+                launcher, "_herdr", side_effect=fake_herdr
+            ), mock.patch.object(
+                launcher, "probe_viewer", return_value="viewer"
+            ), mock.patch.object(
+                launcher,
+                "_snapshot",
+                return_value={
+                    "spaceName": "herdr-orchestrator",
+                    "scopeId": "herdr:w1",
+                    "runId": "019fb24f-f36f-7642-8679-5c6405fb3889",
+                    "sequence": 1,
+                },
+            ):
+                try:
+                    result = launcher.launch(args)
+                except launcher.LauncherError as error:
+                    self.fail(f"session mode is unavailable: {error}")
+
+            self.assertEqual(result["status"], "ready")
+            self.assertEqual(result["mode"], "session")
+            self.assertEqual(
+                result["run_id"], "019fb24f-f36f-7642-8679-5c6405fb3889"
+            )
+            self.assertIsNone(result["state"])
+            command = commands["publisher"]
+            self.assertIn(
+                (
+                    "session_publisher.py --workspace-id w1 "
+                    "--space-name herdr-orchestrator "
+                    "--p1-session-id 019fb24f-f36f-7642-8679-5c6405fb3889 "
+                    "--p1-pane-id w1:p1"
+                ),
+                command,
+            )
+            self.assertIn(
+                (
+                    "pane",
+                    "split",
+                    "--pane",
+                    "w1:p1",
+                    "--direction",
+                    "right",
+                    "--ratio",
+                    "0.32",
+                    "--cwd",
+                    str(repo.resolve()),
+                    "--no-focus",
+                ),
+                calls,
+            )
+            self.assertFalse(
+                any(call[:2] in {("pane", "send-keys"), ("pane", "close")} for call in calls)
+            )
+
     def test_cold_start_from_non_p1_pane_anchors_selected_controller_p1(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
@@ -1393,6 +1639,22 @@ class StartViewerTest(unittest.TestCase):
             splits: list[tuple[str, ...]] = []
 
             def fake_herdr(*args):
+                if args[:2] == ("agent", "list"):
+                    return {
+                        "result": {
+                            "agents": [
+                                {
+                                    "workspace_id": "w1",
+                                    "pane_id": "w1:p1",
+                                    "name": "p1_orchestrator",
+                                    "agent_session": {
+                                        "kind": "id",
+                                        "value": "p1-session",
+                                    },
+                                }
+                            ]
+                        }
+                    }
                 if args[:2] == ("workspace", "list"):
                     return self.workspace_list()
                 if args[:2] == ("pane", "list"):
