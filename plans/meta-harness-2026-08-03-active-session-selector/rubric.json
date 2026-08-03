@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "meta-harness/rubric-v1",
+  "locked": true,
+  "intent": "DELIVER",
+  "orchestration_mode": "parallel-herdr-standard",
+  "target": 8,
+  "target_min": 7,
+  "max_iterations": 3,
+  "criteria": [
+    {
+      "id": "truthful_liveness",
+      "weight": 25,
+      "description": "Active membership comes from fresh exact-identity presence, and visible current P1 status matches runtime state."
+    },
+    {
+      "id": "workspace_isolation",
+      "weight": 25,
+      "description": "Publishers inspect only their own workspace and no viewer path dispatches, moves, closes, or adopts foreign agents."
+    },
+    {
+      "id": "compact_selector_usability",
+      "weight": 20,
+      "description": "Active and History are visibly grouped with short space-first labels that fit supported viewports."
+    },
+    {
+      "id": "backward_compatibility",
+      "weight": 15,
+      "description": "Historical URLs, persisted snapshots, control-state/custom flows, SSE, and pane placement remain exact and readable."
+    },
+    {
+      "id": "operational_efficiency",
+      "weight": 15,
+      "description": "Heartbeats avoid ledger churn, incompatible servers are skipped without termination, and focused/full checks remain reliable."
+    }
+  ]
+}
