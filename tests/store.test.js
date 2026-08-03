@@ -127,6 +127,9 @@ describe('GraphStore', () => {
         spaceName: 'herdr-orchestrator',
         scopeId: 'newer',
         runId: 'run-2',
+        shortName: 'run-2',
+        isLive: false,
+        runStatus: 'RUNNING',
         sequence: 3,
         generatedAt: '2026-07-31T11:00:00Z',
         title: 'newer run-2',
@@ -134,10 +137,40 @@ describe('GraphStore', () => {
       {
         scopeId: 'older',
         runId: 'run-1',
+        shortName: 'run-1',
+        isLive: false,
+        runStatus: 'RUNNING',
         sequence: 1,
         generatedAt: '2026-07-31T09:00:00Z',
         title: 'older run-1',
       },
+    ]);
+  });
+
+  test('merges exact presence and lists active summaries before history', async () => {
+    const presenceStore = {
+      list: () => [
+        {scopeId: 'herdr:wP', runId: 'current', spaceName: 'car-edge', shortName: 'current'},
+        {scopeId: 'herdr:wK', runId: 'current', spaceName: 'herdr-orchestrator', shortName: 'current'},
+      ],
+    };
+    const store = new GraphStore(dataFile, {presenceStore});
+    await store.initialize();
+    const car = snapshot('herdr:wP', 'current', 1, '2026-08-03T10:04:00Z');
+    car.spaceName = 'car-edge';
+    car.shortName = 'current';
+    const current = snapshot('herdr:wK', 'current', 1, '2026-08-03T10:03:00Z');
+    const selector = snapshot('herdr:wK', 'herdr-graph-viewer-space-selector-20260802', 1, '2026-08-03T10:02:00Z');
+    selector.nodes[0].status = 'passed';
+    const hardening = snapshot('herdr:wK', 'herdr-graph-viewer-hardening-20260801', 1, '2026-08-03T10:01:00Z');
+    hardening.nodes[0].status = 'passed';
+    for (const value of [hardening, current, selector, car]) await store.append(value);
+
+    expect(store.listGraphs().map(({scopeId, runId, spaceName, shortName, isLive, runStatus}) => ({scopeId, runId, spaceName, shortName, isLive, runStatus}))).toEqual([
+      {scopeId: 'herdr:wP', runId: 'current', spaceName: 'car-edge', shortName: 'current', isLive: true, runStatus: 'RUNNING'},
+      {scopeId: 'herdr:wK', runId: 'current', spaceName: 'herdr-orchestrator', shortName: 'current', isLive: true, runStatus: 'RUNNING'},
+      {scopeId: 'herdr:wK', runId: 'herdr-graph-viewer-space-selector-20260802', spaceName: 'herdr-orchestrator', shortName: 'space-selector', isLive: false, runStatus: 'DONE'},
+      {scopeId: 'herdr:wK', runId: 'herdr-graph-viewer-hardening-20260801', spaceName: 'herdr-orchestrator', shortName: 'viewer-hardening', isLive: false, runStatus: 'DONE'},
     ]);
   });
 });

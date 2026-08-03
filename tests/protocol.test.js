@@ -74,6 +74,15 @@ describe('validateSnapshot', () => {
     expect(() => validateSnapshot(snapshot({spaceName}))).toThrow(/spaceName/i);
   });
 
+  test('accepts and validates an optional non-empty short name', () => {
+    expect(validateSnapshot(snapshot({shortName: 'current'})).shortName).toBe(
+      'current',
+    );
+    expect(() => validateSnapshot(snapshot({shortName: ''}))).toThrow(
+      /shortName/i,
+    );
+  });
+
   test('rejects duplicate node IDs', () => {
     const input = snapshot();
     input.nodes.push({...input.nodes[0]});

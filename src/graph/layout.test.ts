@@ -179,6 +179,9 @@ describe('live graph selection', () => {
   const summaries: GraphSummary[] = [
     {
       spaceName: 'herdr-orchestrator',
+      shortName: 'current',
+      isLive: true,
+      runStatus: 'RUNNING',
       scopeId: 'scope:new',
       runId: 'run/new',
       sequence: 4,
@@ -188,6 +191,9 @@ describe('live graph selection', () => {
     {
       scopeId: 'scope:old',
       runId: 'run/old',
+      shortName: 'viewer-hardening',
+      isLive: false,
+      runStatus: 'DONE',
       sequence: 9,
       generatedAt: '2026-07-31T10:00:00Z',
       title: 'Older graph',
@@ -203,16 +209,20 @@ describe('live graph selection', () => {
     expect(selectedGraphFromList(summaries, selected)).toEqual(summaries[1]);
   });
 
-  test('falls back to the newest listed graph when the URL has no complete key', () => {
-    expect(selectedGraphFromList(summaries, null)).toEqual(summaries[0]);
+  test('falls back to the first active graph when the URL has no complete key', () => {
+    expect(selectedGraphFromList([summaries[1], summaries[0]], null)).toEqual(
+      summaries[0],
+    );
     expect(graphSelectionFromLocation('?scopeId=scope%3Anew')).toBeNull();
   });
 
-  test('labels graph options by space name with a scope fallback', () => {
+  test('labels graph options compactly by status and space with a scope fallback', () => {
     expect(graphOptionLabel(summaries[0])).toBe(
-      'herdr-orchestrator · Newest graph',
+      'LIVE · herdr-orchestrator · current',
     );
-    expect(graphOptionLabel(summaries[1])).toBe('scope:old · Older graph');
+    expect(graphOptionLabel(summaries[1])).toBe(
+      'DONE · scope:old · viewer-hardening',
+    );
   });
 
   test('does not replace a missing complete URL key with the newest graph', () => {

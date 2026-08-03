@@ -13,12 +13,13 @@ export class StaleSequenceError extends Error {
 }
 
 export class GraphStore {
-  constructor(dataFile) {
+  constructor(dataFile, {presenceStore} = {}) {
     if (!dataFile) throw new TypeError('GraphStore requires a data file');
     this.dataFile = dataFile;
     this.latest = new Map();
     this.initialization = null;
     this.writeQueue = Promise.resolve();
+    this.presenceStore = presenceStore;
   }
 
   initialize() {
@@ -81,16 +82,46 @@ export class GraphStore {
   }
 
   listGraphs() {
+    const presences = this.presenceStore?.list() ?? [];
+    const presenceByGraph = new Map(
+      presences.map(presence => [
+        graphKey(presence.scopeId, presence.runId),
+        presence,
+      ]),
+    );
+    const spaceByScope = new Map();
+    for (const snapshot of this.latest.values()) {
+      if (snapshot.spaceName !== undefined) {
+        spaceByScope.set(snapshot.scopeId, snapshot.spaceName);
+      }
+    }
+    for (const presence of presences) {
+      if (presence.spaceName !== undefined) {
+        spaceByScope.set(presence.scopeId, presence.spaceName);
+      }
+    }
+
     return [...this.latest.values()]
-      .map(({spaceName, scopeId, runId, sequence, generatedAt, title}) => ({
-        ...(spaceName === undefined ? {} : {spaceName}),
-        scopeId,
-        runId,
-        sequence,
-        generatedAt,
-        title,
-      }))
+      .map(snapshot => {
+        const {scopeId, runId, sequence, generatedAt, title} = snapshot;
+        const presence = presenceByGraph.get(graphKey(scopeId, runId));
+        const spaceName =
+          snapshot.spaceName ?? presence?.spaceName ?? spaceByScope.get(scopeId);
+        return {
+          ...(spaceName === undefined ? {} : {spaceName}),
+          scopeId,
+          runId,
+          shortName:
+            snapshot.shortName ?? presence?.shortName ?? compactRunName(runId),
+          isLive: Boolean(presence),
+          runStatus: runStatus(snapshot),
+          sequence,
+          generatedAt,
+          title,
+        };
+      })
       .sort((left, right) => {
+        if (left.isLive !== right.isLive) return left.isLive ? -1 : 1;
         const newestFirst = Date.parse(right.generatedAt) - Date.parse(left.generatedAt);
         if (newestFirst !== 0) return newestFirst;
         return graphKey(left.scopeId, left.runId).localeCompare(
@@ -98,4 +129,19 @@ export class GraphStore {
         );
       });
   }
+}
+
+function compactRunName(runId) {
+  const withoutDate = runId.replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '');
+  return withoutDate.split('-').slice(-2).join('-');
+}
+
+function runStatus(snapshot) {
+  const p1 =
+    snapshot.nodes.find(node => node.assignee === 'P1') ??
+    snapshot.nodes.find(node => node.id === 'orchestrator');
+  if (p1?.status === 'running' || p1?.status === 'retrying') return 'RUNNING';
+  if (p1?.status === 'passed' || p1?.status === 'skipped') return 'DONE';
+  if (p1?.status === 'failed' || p1?.status === 'blocked') return 'FAILED';
+  return 'PENDING';
 }

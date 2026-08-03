@@ -57,6 +57,15 @@ async function postSnapshot(baseUrl, snapshot) {
   assert.equal(response.status, 202, await response.text());
 }
 
+async function postPresence(baseUrl, presence) {
+  const response = await fetch(`${baseUrl}/api/presence`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify(presence),
+  });
+  assert.equal(response.status, 202, await response.text());
+}
+
 async function waitForNodeCount(page, count) {
   await page.waitForFunction(
     expected =>
@@ -210,6 +219,7 @@ try {
   const compact = await readFixture('compact.json');
   const branched = await readFixture('branched-loop.json');
   compact.spaceName = 'car-edge';
+  compact.shortName = 'current';
   compact.title = 'Herdr standard delivery';
   branched.spaceName = 'herdr-orchestrator';
   branched.title = 'Herdr graph viewer hardening';
@@ -311,16 +321,42 @@ try {
   const selectorLayout = {
     ...structuredClone(compact),
     spaceName: 'herdr-orchestrator',
+    shortName: undefined,
     scopeId: 'herdr:wK',
     runId: 'herdr-graph-viewer-space-selector-20260802',
     generatedAt: new Date(recentEpochMilliseconds - 2000).toISOString(),
     title:
       'Auto operational view — herdr-graph-viewer-space-selector-20260802',
   };
+  selectorLayout.nodes[0] = {
+    ...selectorLayout.nodes[0],
+    assignee: 'P1',
+    status: 'passed',
+  };
+  const activeHerdr = {
+    ...structuredClone(compact),
+    spaceName: 'herdr-orchestrator',
+    scopeId: 'herdr:wK',
+    runId: '019fc17a-c793-7cd3-8f0d-113ac80ae6ff',
+    generatedAt: recentIsoTime,
+    title: 'Current Herdr orchestration',
+  };
+  const historyHardening = {
+    ...structuredClone(branched),
+    spaceName: undefined,
+    scopeId: 'herdr:wK',
+    runId: 'herdr-graph-viewer-hardening-20260801',
+    generatedAt: new Date(recentEpochMilliseconds - 3000).toISOString(),
+  };
+  historyHardening.nodes = historyHardening.nodes.map(node =>
+    node.assignee === 'P1' ? {...node, status: 'passed'} : node,
+  );
   await postSnapshot(baseUrl, compact);
+  await postSnapshot(baseUrl, activeHerdr);
   await postSnapshot(baseUrl, customPersona);
   await postSnapshot(baseUrl, persona);
   await postSnapshot(baseUrl, selectorLayout);
+  await postSnapshot(baseUrl, historyHardening);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
     {
@@ -339,6 +375,18 @@ try {
     },
   ];
   await postSnapshot(baseUrl, atTimelineSnapshot);
+  await postPresence(baseUrl, {
+    scopeId: compact.scopeId,
+    runId: compact.runId,
+    spaceName: 'car-edge',
+    shortName: 'current',
+  });
+  await postPresence(baseUrl, {
+    scopeId: activeHerdr.scopeId,
+    runId: activeHerdr.runId,
+    spaceName: 'herdr-orchestrator',
+    shortName: 'current',
+  });
 
   const missingSelection = {
     scopeId: 'portfolio:missing',
@@ -357,15 +405,24 @@ try {
   assert.equal(missingUrl.searchParams.get('runId'), missingSelection.runId);
 
   await page.goto(baseUrl);
-  await waitForNodeCount(page, persona.nodes.length);
+  await waitForNodeCount(page, activeHerdr.nodes.length);
 
   const selector = page.locator('[data-testid="graph-selector"]');
   const optionLabels = await selector.locator('option').allTextContents();
-  assert.ok(
-    optionLabels.includes('herdr-orchestrator · Herdr graph viewer hardening'),
+  assert.deepEqual(
+    await selector
+      .locator('optgroup')
+      .evaluateAll(groups => groups.map(group => group.label)),
+    ['Active', 'History'],
   );
-  assert.ok(optionLabels.includes('car-edge · Herdr standard delivery'));
-  assert.ok(optionLabels.includes('persona:custom · Authored auto ID contract'));
+  for (const label of [
+    'LIVE · car-edge · current',
+    'LIVE · herdr-orchestrator · current',
+    'DONE · herdr-orchestrator · space-selector',
+    'DONE · herdr-orchestrator · viewer-hardening',
+  ]) {
+    assert.ok(optionLabels.includes(label), `Missing selector option: ${label}`);
+  }
   await selector.selectOption(
     new URLSearchParams({
       scopeId: selectorLayout.scopeId,
@@ -376,7 +433,7 @@ try {
   const selectorLayoutMetrics = await selectedOptionLayout(page);
   assert.equal(
     selectorLayoutMetrics.selectedLabel,
-    'herdr-orchestrator · Auto operational view — herdr-graph-viewer-space-selector-20260802',
+    'DONE · herdr-orchestrator · space-selector',
   );
   assert.ok(
     selectorLayoutMetrics.textWidth <= selectorLayoutMetrics.contentWidth,
@@ -630,7 +687,7 @@ try {
   );
   assert.ok(
     (await selector.locator('option').allTextContents()).includes(
-      'herdr-orchestrator · Herdr graph viewer hardening',
+      'RUNNING · herdr-orchestrator · quality-loop',
     ),
   );
 

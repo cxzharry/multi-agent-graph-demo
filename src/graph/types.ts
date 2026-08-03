@@ -59,6 +59,7 @@ export type RoleGraphSnapshot = {
   schemaVersion: 'role-graph/v1';
   flowId?: string;
   spaceName?: string;
+  shortName?: string;
   scopeId: string;
   runId: string;
   sequence: number;
@@ -74,6 +75,10 @@ export type RoleGraphSnapshot = {
 export type GraphSummary = Pick<
   RoleGraphSnapshot,
   'spaceName' | 'scopeId' | 'runId' | 'sequence' | 'generatedAt' | 'title'
->;
+> & {
+  shortName: string;
+  isLive: boolean;
+  runStatus: 'RUNNING' | 'DONE' | 'FAILED' | 'PENDING';
+};
 
 export type GraphSelection = Pick<RoleGraphSnapshot, 'scopeId' | 'runId'>;

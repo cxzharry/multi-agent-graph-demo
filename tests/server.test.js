@@ -1,4 +1,4 @@
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 
@@ -47,6 +47,14 @@ async function close(server) {
 
 async function post(baseUrl, body, headers = {}) {
   return fetch(`${baseUrl}/api/snapshots`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json', ...headers},
+    body: JSON.stringify(body),
+  });
+}
+
+async function postPresence(baseUrl, body, headers = {}) {
+  return fetch(`${baseUrl}/api/presence`, {
     method: 'POST',
     headers: {'content-type': 'application/json', ...headers},
     body: JSON.stringify(body),
@@ -117,8 +125,27 @@ describe('role graph server', () => {
     expect(await response.json()).toEqual({
       service: 'herdr-role-graph-viewer',
       schemaVersion: 'role-graph/v1',
-      capabilities: ['space-name-summary'],
+      capabilities: ['space-name-summary', 'session-presence'],
     });
+  });
+
+  test('authenticates in-memory presence, expires it, and does not churn JSONL', async () => {
+    await close(server);
+    let now = 1_000;
+    server = createApp({dataFile, ingestToken: 'secret', now: () => now});
+    baseUrl = await listen(server);
+    expect((await post(baseUrl, snapshot(), {authorization: 'Bearer secret'})).status).toBe(202);
+    const before = await readFile(dataFile, 'utf8');
+
+    expect((await postPresence(baseUrl, {scopeId: 'scope-a', runId: 'run-1'})).status).toBe(401);
+    expect((await postPresence(baseUrl, {scopeId: 'scope-a', runId: 'run-1', shortName: ''}, {authorization: 'Bearer secret'})).status).toBe(400);
+    expect((await postPresence(baseUrl, {scopeId: 'scope-a', runId: 'run-1', spaceName: 'herdr-orchestrator', shortName: 'current'}, {authorization: 'Bearer secret'})).status).toBe(202);
+    expect((await (await fetch(`${baseUrl}/api/graphs`)).json())[0]).toMatchObject({isLive: true, shortName: 'current'});
+    expect(await readFile(dataFile, 'utf8')).toBe(before);
+
+    now += 6_001;
+    expect((await (await fetch(`${baseUrl}/api/graphs`)).json())[0].isLive).toBe(false);
+    expect(await readFile(dataFile, 'utf8')).toBe(before);
   });
 
   test('returns 400 for an invalid snapshot', async () => {

@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 
 import {SnapshotValidationError, graphKey} from '../shared/role-graph.js';
 import {GraphStore, StaleSequenceError} from './graph-store.js';
+import {PresenceStore, PresenceValidationError} from './presence-store.js';
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.dirname(moduleDirectory);
@@ -130,8 +131,10 @@ export function createApp({
   dataFile = path.join(repositoryRoot, 'data', 'snapshots.jsonl'),
   distDirectory = path.join(repositoryRoot, 'dist'),
   ingestToken,
+  now,
 } = {}) {
-  const store = new GraphStore(dataFile);
+  const presenceStore = new PresenceStore({now});
+  const store = new GraphStore(dataFile, {presenceStore});
   const ready = store.initialize();
   const clients = new Map();
 
@@ -153,8 +156,23 @@ export function createApp({
         sendJson(response, 200, {
           service: 'herdr-role-graph-viewer',
           schemaVersion: 'role-graph/v1',
-          capabilities: ['space-name-summary'],
+          capabilities: ['space-name-summary', 'session-presence'],
         });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/presence') {
+        if (
+          ingestToken &&
+          request.headers.authorization !== `Bearer ${ingestToken}`
+        ) {
+          sendJson(response, 401, {error: 'Unauthorized'});
+          return;
+        }
+        const presence = presenceStore.heartbeat(
+          JSON.parse((await readBody(request)) || '{}'),
+        );
+        sendJson(response, 202, presence);
         return;
       }
 
@@ -217,7 +235,9 @@ export function createApp({
     } catch (error) {
       const statusCode =
         error.statusCode ||
-        (error instanceof SnapshotValidationError || error instanceof SyntaxError
+        (error instanceof SnapshotValidationError ||
+        error instanceof PresenceValidationError ||
+        error instanceof SyntaxError
           ? 400
           : error instanceof StaleSequenceError
             ? 409

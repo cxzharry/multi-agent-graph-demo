@@ -161,6 +161,7 @@ export function validateSnapshot(value) {
   requireString(value.scopeId, 'scopeId');
   requireString(value.runId, 'runId');
   if (value.spaceName !== undefined) requireString(value.spaceName, 'spaceName');
+  if (value.shortName !== undefined) requireString(value.shortName, 'shortName');
   requireInteger(value.sequence, 'sequence');
   requireTimestamp(value.generatedAt, 'generatedAt');
   requireString(value.title, 'title');

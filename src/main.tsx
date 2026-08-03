@@ -125,6 +125,8 @@ function App() {
       !graphs.some(graph => graphMatchesSelection(graph, selection)),
   );
   const timeline = snapshot ? [...snapshot.events].slice(-12).reverse() : [];
+  const activeGraphs = graphs.filter(graph => graph.isLive);
+  const historicalGraphs = graphs.filter(graph => !graph.isLive);
 
   function handleGraphSelection(value: string) {
     const graph = graphs.find(item => selectionQuery(item) === value);
@@ -161,11 +163,30 @@ function App() {
                   Missing · {selection.scopeId} / {selection.runId}
                 </option>
               )}
-              {graphs.map(graph => (
-                <option key={selectionQuery(graph)} value={selectionQuery(graph)}>
-                  {graphOptionLabel(graph)}
-                </option>
-              ))}
+              {activeGraphs.length > 0 && (
+                <optgroup label="Active">
+                  {activeGraphs.map(graph => (
+                    <option
+                      key={selectionQuery(graph)}
+                      value={selectionQuery(graph)}
+                    >
+                      {graphOptionLabel(graph)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {historicalGraphs.length > 0 && (
+                <optgroup label="History">
+                  {historicalGraphs.map(graph => (
+                    <option
+                      key={selectionQuery(graph)}
+                      value={selectionQuery(graph)}
+                    >
+                      {graphOptionLabel(graph)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
         </div>

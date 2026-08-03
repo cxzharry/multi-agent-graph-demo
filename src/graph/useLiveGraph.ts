@@ -22,7 +22,7 @@ export function selectedGraphFromList(
   if (requested) {
     return graphs.find(graph => graphMatchesSelection(graph, requested)) ?? null;
   }
-  return graphs[0] ?? null;
+  return graphs.find(graph => graph.isLive) ?? graphs[0] ?? null;
 }
 
 export function graphMatchesSelection(
@@ -42,7 +42,7 @@ export function selectionQuery(selection: GraphSelection): string {
 }
 
 export function graphOptionLabel(graph: GraphSummary): string {
-  return `${graph.spaceName ?? graph.scopeId} · ${graph.title}`;
+  return `${graph.isLive ? 'LIVE' : graph.runStatus} · ${graph.spaceName ?? graph.scopeId} · ${graph.shortName}`;
 }
 
 export type ConnectionState =
@@ -161,7 +161,9 @@ export function useLiveGraph() {
           current.map(graph =>
             graphMatchesSelection(graph, activeSelection)
               ? {
-                  spaceName: nextSnapshot.spaceName,
+                  ...graph,
+                  spaceName: nextSnapshot.spaceName ?? graph.spaceName,
+                  shortName: nextSnapshot.shortName ?? graph.shortName,
                   scopeId: nextSnapshot.scopeId,
                   runId: nextSnapshot.runId,
                   sequence: nextSnapshot.sequence,
