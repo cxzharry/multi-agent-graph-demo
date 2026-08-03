@@ -351,12 +351,27 @@ try {
   historyHardening.nodes = historyHardening.nodes.map(node =>
     node.assignee === 'P1' ? {...node, status: 'passed'} : node,
   );
+  const expiringPresence = {
+    ...structuredClone(selectorLayout),
+    shortName: 'expiring',
+    runId: 'dynamic-expiring-presence',
+    generatedAt: new Date(recentEpochMilliseconds + 1000).toISOString(),
+    title: 'Expiring presence transition',
+  };
+  const arrivingPresence = {
+    ...structuredClone(selectorLayout),
+    shortName: 'arrival',
+    runId: 'dynamic-arriving-presence',
+    generatedAt: new Date(recentEpochMilliseconds + 2000).toISOString(),
+    title: 'Arriving presence transition',
+  };
   await postSnapshot(baseUrl, compact);
   await postSnapshot(baseUrl, activeHerdr);
   await postSnapshot(baseUrl, customPersona);
   await postSnapshot(baseUrl, persona);
   await postSnapshot(baseUrl, selectorLayout);
   await postSnapshot(baseUrl, historyHardening);
+  await postSnapshot(baseUrl, expiringPresence);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
     {
@@ -404,8 +419,14 @@ try {
   assert.equal(missingUrl.searchParams.get('scopeId'), missingSelection.scopeId);
   assert.equal(missingUrl.searchParams.get('runId'), missingSelection.runId);
 
+  await postPresence(baseUrl, {
+    scopeId: expiringPresence.scopeId,
+    runId: expiringPresence.runId,
+    spaceName: expiringPresence.spaceName,
+    shortName: expiringPresence.shortName,
+  });
   await page.goto(baseUrl);
-  await waitForNodeCount(page, activeHerdr.nodes.length);
+  await waitForNodeCount(page, expiringPresence.nodes.length);
 
   const selector = page.locator('[data-testid="graph-selector"]');
   const optionLabels = await selector.locator('option').allTextContents();
@@ -423,6 +444,46 @@ try {
   ]) {
     assert.ok(optionLabels.includes(label), `Missing selector option: ${label}`);
   }
+  const activeHerdrValue = new URLSearchParams({
+    scopeId: activeHerdr.scopeId,
+    runId: activeHerdr.runId,
+  }).toString();
+  await selector.selectOption(activeHerdrValue);
+  await waitForNodeCount(page, activeHerdr.nodes.length);
+  const selectedUrl = page.url();
+
+  await postSnapshot(baseUrl, arrivingPresence);
+  await postPresence(baseUrl, {
+    scopeId: arrivingPresence.scopeId,
+    runId: arrivingPresence.runId,
+    spaceName: arrivingPresence.spaceName,
+    shortName: arrivingPresence.shortName,
+  });
+  const transitions = await Promise.allSettled([
+    page.waitForFunction(
+      label =>
+        [...document.querySelectorAll('optgroup[label="Active"] option')].some(
+          option => option.textContent?.trim() === label,
+        ),
+      'LIVE · herdr-orchestrator · arrival',
+      {timeout: 10_000},
+    ),
+    page.waitForFunction(
+      label =>
+        [...document.querySelectorAll('optgroup[label="History"] option')].some(
+          option => option.textContent?.trim() === label,
+        ),
+      'DONE · herdr-orchestrator · expiring',
+      {timeout: 10_000},
+    ),
+  ]);
+  assert.deepEqual(
+    transitions.map(result => result.status),
+    ['fulfilled', 'fulfilled'],
+    'An open viewer must refresh arrival and expiry presence transitions',
+  );
+  assert.equal(await selector.inputValue(), activeHerdrValue);
+  assert.equal(page.url(), selectedUrl);
   await selector.selectOption(
     new URLSearchParams({
       scopeId: selectorLayout.scopeId,

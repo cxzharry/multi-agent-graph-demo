@@ -62,8 +62,11 @@ export function useLiveGraph() {
 
   useEffect(() => {
     let active = true;
+    let refreshing = false;
 
     async function loadGraphs() {
+      if (refreshing) return;
+      refreshing = true;
       try {
         const response = await fetch('/api/graphs');
         if (!response.ok) throw new Error(`Graph list returned ${response.status}`);
@@ -75,7 +78,7 @@ export function useLiveGraph() {
           ? {scopeId: nextGraph.scopeId, runId: nextGraph.runId}
           : null;
         setGraphs(nextGraphs);
-        setSelection(requested ?? fallbackSelection);
+        setSelection(current => current ?? requested ?? fallbackSelection);
         setError(null);
       } catch (loadError) {
         if (active) {
@@ -83,13 +86,16 @@ export function useLiveGraph() {
           setConnection('error');
         }
       } finally {
+        refreshing = false;
         if (active) setLoading(false);
       }
     }
 
     void loadGraphs();
+    const refreshTimer = window.setInterval(() => void loadGraphs(), 2_000);
     return () => {
       active = false;
+      window.clearInterval(refreshTimer);
     };
   }, []);
 
