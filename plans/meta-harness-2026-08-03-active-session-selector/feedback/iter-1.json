@@ -1,0 +1,91 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "intent": "DELIVER",
+  "candidate_commit": "6887f3b8543ac33ea666ad21e413b60d98514003",
+  "candidate_tree": "97005fd0d9a9f16b65a351c4e386f463daad6e98",
+  "passed": false,
+  "weighted_composite": 7.7,
+  "scores": {
+    "truthful_liveness": {
+      "score": 7,
+      "evidence": "The presence payload and exact identity model were implemented, but integration-g1 proved that the launcher command could not start the session publisher: direct execution failed its package import and the isolated parser rejected --watch."
+    },
+    "workspace_isolation": {
+      "score": 9,
+      "evidence": "The session publisher and launcher tests retained exact workspace targeting, foreign-workspace exclusion, and no agent-pane adoption or closure; the finding occurred before network or pane workflow execution."
+    },
+    "compact_selector_usability": {
+      "score": 8,
+      "evidence": "The web suite exercised Active and History grouping and compact space-first labels, with no iteration-1 finding against selector readability or selection identity."
+    },
+    "backward_compatibility": {
+      "score": 7,
+      "evidence": "Existing graph protocol and historical selection coverage remained present, but the new session-mode launch command was not executable because its import and --watch CLI contracts disagreed."
+    },
+    "operational_efficiency": {
+      "score": 7,
+      "evidence": "Heartbeat and incompatible-server behavior were covered, but the primary session publisher process could not start through the integrated launcher seam, making the operational path incomplete."
+    }
+  },
+  "criterion_evidence": {
+    "truthful_liveness": [
+      "integration-g1.json: exact absolute-path session publisher launch exited with ModuleNotFoundError before publishing",
+      "integration-g1.json: parser rejected the launcher-provided --watch argument"
+    ],
+    "workspace_isolation": [
+      "session_publisher_presence-g1.json",
+      "launcher_session_mode-g1.json"
+    ],
+    "compact_selector_usability": [
+      "presence_summary_selector-g1.json"
+    ],
+    "backward_compatibility": [
+      "integration-g1.json finding_or_blocker"
+    ],
+    "operational_efficiency": [
+      "integration-g1.json checks: import exit 1 and argparse exit 2"
+    ]
+  },
+  "verification": [
+    {
+      "command": "canonical validation of the three generation-1 implementation receipts",
+      "result": "pass",
+      "detail": "Recorded by integration-g1.json before integration execution"
+    },
+    {
+      "command": "exact absolute-path session publisher launch",
+      "result": "fail",
+      "detail": "ModuleNotFoundError: No module named adapters"
+    },
+    {
+      "command": "session publisher parser with repository import path",
+      "result": "fail",
+      "detail": "unrecognized arguments: --watch"
+    }
+  ],
+  "failures": [
+    {
+      "severity": "blocking",
+      "criterion": "operational_efficiency",
+      "finding": "Integrated launcher and session publisher CLI seam was not executable",
+      "expected": "Session mode starts the workspace-local publisher with matching imports and arguments",
+      "actual": "The exact launcher command failed first at import and then at argument parsing",
+      "evidence_ref": "integration-g1.json"
+    }
+  ],
+  "failure_class": "implementation",
+  "targeted_criteria": [
+    "truthful_liveness",
+    "backward_compatibility",
+    "operational_efficiency"
+  ],
+  "attribution": {
+    "executor": "p5_integration",
+    "orchestrator": "herdr-orchestrator",
+    "learning_owner": "session_publisher_presence",
+    "failure_domain": "launcher_publisher_cli_contract",
+    "confidence": "high",
+    "reason": "The exact integrated command and publisher parser disagreed at their executable boundary"
+  }
+}

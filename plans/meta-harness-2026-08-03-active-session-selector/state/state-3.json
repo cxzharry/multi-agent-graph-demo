@@ -1,0 +1,30 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 3,
+  "candidate_commit": "a2a63629e79138706d8327e923c9696bd4be539b",
+  "candidate_tree": "6db3990cd367cd4b457bfe1a0ec96315ae67dd94",
+  "prior_scores": {
+    "truthful_liveness": 7,
+    "workspace_isolation": 9,
+    "compact_selector_usability": 9,
+    "backward_compatibility": 8,
+    "operational_efficiency": 8
+  },
+  "scores": {
+    "truthful_liveness": 9,
+    "workspace_isolation": 9,
+    "compact_selector_usability": 9,
+    "backward_compatibility": 8,
+    "operational_efficiency": 8
+  },
+  "weighted_composite": 8.7,
+  "failure_class": null,
+  "targeted_criteria": [],
+  "hypothesis": "A bounded summary refresh can follow authoritative presence while preserving exact selected identity and every launcher, protocol, and pane boundary",
+  "what_not_to_retry": [
+    "Do not replace exact scopeId and runId selection with a fallback",
+    "Do not infer liveness from persisted graph state",
+    "Do not alter the locked rubric or rerun product tests during delivery"
+  ],
+  "stop_condition": "SUCCESS"
+}

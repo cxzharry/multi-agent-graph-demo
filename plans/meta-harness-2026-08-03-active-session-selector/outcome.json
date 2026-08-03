@@ -1,0 +1,74 @@
+{
+  "schema_version": "meta-harness-outcome/v1",
+  "exit_code": "SUCCESS",
+  "intent": "DELIVER",
+  "orchestrator": "meta-harness",
+  "meta_harness_used": true,
+  "target": 8,
+  "target_min": 7,
+  "max_iterations": 3,
+  "total_iterations": 3,
+  "best_iteration": 3,
+  "best_composite": 8.7,
+  "composite_trajectory": [
+    {
+      "iter": 1,
+      "composite": 7.7
+    },
+    {
+      "iter": 2,
+      "composite": 8.2
+    },
+    {
+      "iter": 3,
+      "composite": 8.7
+    }
+  ],
+  "final_scores": {
+    "truthful_liveness": 9,
+    "workspace_isolation": 9,
+    "compact_selector_usability": 9,
+    "backward_compatibility": 8,
+    "operational_efficiency": 8
+  },
+  "product_findings": [
+    {
+      "iteration": 1,
+      "source": "P5",
+      "id": "integration-cli-seam",
+      "criterion": "operational_efficiency",
+      "status": "resolved_in_iteration_2",
+      "evidence": "integration-g1.json"
+    },
+    {
+      "iteration": 2,
+      "source": "P6",
+      "id": "stale-ui-presence",
+      "criterion": "truthful_liveness",
+      "status": "resolved_in_iteration_3",
+      "evidence": "independent_review-g1.json"
+    }
+  ],
+  "product_corrections": [
+    {
+      "integrated_commit": "aa132a7cd5780f2ab5bdf8390ac2b4e8ab031fa9",
+      "summary": "Align the session publisher import and --watch CLI contract used by the launcher"
+    },
+    {
+      "integrated_commit": "a2a63629e79138706d8327e923c9696bd4be539b",
+      "summary": "Refresh authoritative graph summaries while preserving exact selected scope and run identity"
+    }
+  ],
+  "required_receipts": {
+    "integration-g4.json": "PASS",
+    "independent_review-g2.json": "PASS",
+    "functional_qc-g1.json": "PASS",
+    "layout_qc-g2.json": "PASS",
+    "persona_qc-g1.json": "PASS"
+  },
+  "trace": {
+    "status": "not_requested",
+    "note": "Delivery requested the bounded plan evidence set only."
+  },
+  "completed_at_utc": "2026-08-03T04:13:38Z"
+}

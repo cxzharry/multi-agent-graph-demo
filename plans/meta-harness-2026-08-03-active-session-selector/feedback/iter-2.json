@@ -1,0 +1,84 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 2,
+  "intent": "DELIVER",
+  "candidate_commit": "aa132a7cd5780f2ab5bdf8390ac2b4e8ab031fa9",
+  "candidate_tree": "f5871e5cbd733b83a440932c270c88adae26f4e9",
+  "passed": false,
+  "weighted_composite": 8.2,
+  "scores": {
+    "truthful_liveness": {
+      "score": 7,
+      "evidence": "The launcher-to-publisher seam was repaired and deterministic suites passed, but independent_review-g1 found that an already-open viewer fetched graph summaries only on mount, leaving expired runs LIVE and new runs undiscoverable until reload."
+    },
+    "workspace_isolation": {
+      "score": 9,
+      "evidence": "Publisher and launcher evidence continued to enforce exact workspace and run identity without cross-workspace adoption, pane movement, closure, or dispatch."
+    },
+    "compact_selector_usability": {
+      "score": 9,
+      "evidence": "Active and History optgroups and compact status-space-run labels were present and covered by web tests; the remaining failure concerned freshness after the viewer was already open."
+    },
+    "backward_compatibility": {
+      "score": 8,
+      "evidence": "Historical URLs, snapshots, protocol validation, SSE, and launcher behavior passed the integration-g2 matrix, with the remaining defect isolated to live summary refresh."
+    },
+    "operational_efficiency": {
+      "score": 8,
+      "evidence": "Session publisher 8/8, control publisher 43/43, launcher 48/48, web 45/45, build, and diff checks passed; no product test identified heartbeat ledger churn or incompatible-server termination."
+    }
+  },
+  "criterion_evidence": {
+    "truthful_liveness": [
+      "independent_review-g1.json: useLiveGraph fetched /api/graphs only in a mount-only effect",
+      "independent_review-g1.json: expiry and post-open arrival required a reload"
+    ],
+    "workspace_isolation": [
+      "integration-g2.json full launcher and publisher matrix",
+      "launcher_session_mode-g1.json"
+    ],
+    "compact_selector_usability": [
+      "presence_summary_selector-g1.json exact Active and History labels"
+    ],
+    "backward_compatibility": [
+      "integration-g2.json protocol, historical URL, SSE, and launcher verification"
+    ],
+    "operational_efficiency": [
+      "integration-g2.json: session publisher 8, control publisher 43, launcher 48, web 45, and build passed"
+    ]
+  },
+  "verification": [
+    {
+      "command": "integration-g2 deterministic matrix",
+      "result": "pass",
+      "detail": "Session publisher 8, control publisher 43, launcher 48, web 45, production build, and diff checks"
+    },
+    {
+      "command": "independent read-only diff and adversarial review",
+      "result": "fail",
+      "detail": "Open-viewer summaries did not refresh after presence arrival or six-second expiry"
+    }
+  ],
+  "failures": [
+    {
+      "severity": "blocking",
+      "criterion": "truthful_liveness",
+      "finding": "Active and History membership became stale in an already-open viewer",
+      "expected": "Fresh exact-identity presence moves runs into Active and six-second expiry returns snapshots to History without reload",
+      "actual": "The UI retained mount-time summary membership until manual reload",
+      "evidence_ref": "independent_review-g1.json"
+    }
+  ],
+  "failure_class": "implementation",
+  "targeted_criteria": [
+    "truthful_liveness"
+  ],
+  "attribution": {
+    "executor": "p6_review",
+    "orchestrator": "herdr-orchestrator",
+    "learning_owner": "presence_summary_selector",
+    "failure_domain": "ui_presence_freshness",
+    "confidence": "high",
+    "reason": "The frontend summary lifecycle did not re-read authoritative presence after mount"
+  }
+}

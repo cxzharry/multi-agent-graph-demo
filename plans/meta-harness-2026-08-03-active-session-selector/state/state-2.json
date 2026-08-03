@@ -1,0 +1,33 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 2,
+  "candidate_commit": "aa132a7cd5780f2ab5bdf8390ac2b4e8ab031fa9",
+  "candidate_tree": "f5871e5cbd733b83a440932c270c88adae26f4e9",
+  "prior_scores": {
+    "truthful_liveness": 7,
+    "workspace_isolation": 9,
+    "compact_selector_usability": 8,
+    "backward_compatibility": 7,
+    "operational_efficiency": 7
+  },
+  "scores": {
+    "truthful_liveness": 7,
+    "workspace_isolation": 9,
+    "compact_selector_usability": 9,
+    "backward_compatibility": 8,
+    "operational_efficiency": 8
+  },
+  "weighted_composite": 8.2,
+  "failure_class": "implementation",
+  "targeted_criteria": [
+    "truthful_liveness"
+  ],
+  "hypothesis": "The viewer cached graph summary liveness at mount and never re-read authoritative presence after arrival or TTL expiry",
+  "what_not_to_retry": [
+    "Do not infer liveness from persisted snapshots or SSE activity",
+    "Do not change selected scopeId or runId during background refresh",
+    "Do not broaden refresh into server, publisher, launcher, or pane mutation",
+    "Do not rerun frozen product evidence during delivery"
+  ],
+  "stop_condition": "CONTINUE"
+}

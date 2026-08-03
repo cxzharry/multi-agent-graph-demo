@@ -1,0 +1,29 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 1,
+  "candidate_commit": "6887f3b8543ac33ea666ad21e413b60d98514003",
+  "candidate_tree": "97005fd0d9a9f16b65a351c4e386f463daad6e98",
+  "prior_scores": null,
+  "scores": {
+    "truthful_liveness": 7,
+    "workspace_isolation": 9,
+    "compact_selector_usability": 8,
+    "backward_compatibility": 7,
+    "operational_efficiency": 7
+  },
+  "weighted_composite": 7.7,
+  "failure_class": "implementation",
+  "targeted_criteria": [
+    "truthful_liveness",
+    "backward_compatibility",
+    "operational_efficiency"
+  ],
+  "hypothesis": "The launcher emitted an absolute script command with package-import and --watch contracts the session publisher did not support",
+  "what_not_to_retry": [
+    "Do not weaken exact workspace or run identity",
+    "Do not add a second publisher command grammar",
+    "Do not terminate incompatible servers or touch agent panes",
+    "Do not rerun frozen product evidence during delivery"
+  ],
+  "stop_condition": "CONTINUE"
+}

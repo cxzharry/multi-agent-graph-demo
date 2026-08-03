@@ -1,0 +1,107 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 3,
+  "intent": "DELIVER",
+  "candidate_commit": "a2a63629e79138706d8327e923c9696bd4be539b",
+  "candidate_tree": "6db3990cd367cd4b457bfe1a0ec96315ae67dd94",
+  "passed": true,
+  "weighted_composite": 8.7,
+  "scores": {
+    "truthful_liveness": {
+      "score": 9,
+      "evidence": "integration-g4 and independent_review-g2 bind the exact candidate and prove post-open presence arrival plus six-second LIVE-to-DONE/History expiry without reload while the selected scopeId, runId, and URL remain unchanged."
+    },
+    "workspace_isolation": {
+      "score": 9,
+      "evidence": "The receipt-bound publisher and launcher suites enforce exact workspace/run identity, reject foreign workspaces, preserve incompatible servers, and perform no agent-pane adoption, move, close, or dispatch."
+    },
+    "compact_selector_usability": {
+      "score": 9,
+      "evidence": "layout_qc-g2 and persona_qc-g1 verify native Active then History grouping, compact status-space-short-run labels, fitting selected text, supported responsive containment, and operator-readable LIVE, DONE, and RUNNING states."
+    },
+    "backward_compatibility": {
+      "score": 8,
+      "evidence": "functional_qc-g1 verifies historical URLs, persisted snapshots, control-state/custom flows, SSE, exact selection, strict launcher behavior, and the pre-existing incompatible server remaining untouched."
+    },
+    "operational_efficiency": {
+      "score": 8,
+      "evidence": "The final receipt set records session publisher 8/8, control publisher 43/43, launcher 48/48, web 45/45, production build, browser smoke, clean diff, no heartbeat ledger churn regression, and no incompatible-server termination."
+    }
+  },
+  "criterion_evidence": {
+    "truthful_liveness": [
+      "integration-g4.json: fresh 9.5-second browser smoke",
+      "independent_review-g2.json: bounded two-second summary refresh and six-second expiry",
+      "functional_qc-g1.json: exact live arrival and History transition"
+    ],
+    "workspace_isolation": [
+      "functional_qc-g1.json: publisher and launcher suites",
+      "independent_review-g2.json: no server, protocol, workspace, publisher, launcher, dispatch, move, close, or pane regression"
+    ],
+    "compact_selector_usability": [
+      "layout_qc-g2.json: optgroups, label fit, desktop and responsive containment",
+      "persona_qc-g1.json: operator-readable LIVE, DONE, RUNNING, and exact selection"
+    ],
+    "backward_compatibility": [
+      "functional_qc-g1.json: historical URLs, snapshots, SSE, old incompatible server preservation",
+      "integration-g4.json: exact candidate diff check and clean worktree"
+    ],
+    "operational_efficiency": [
+      "integration-g4.json: inherited deterministic matrix and fresh browser/diff evidence",
+      "functional_qc-g1.json: 8 session publisher, 43 control publisher, 48 launcher, 45 web tests, and build"
+    ]
+  },
+  "verification": [
+    {
+      "command": "canonical validation: integration-g4 independent_review-g2 functional_qc-g1 layout_qc-g2 persona_qc-g1",
+      "result": "pass",
+      "detail": "Every required receipt validated against delivery generation-1 control state"
+    },
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_session_publisher",
+      "result": "pass",
+      "detail": "8 tests, receipt-bound"
+    },
+    {
+      "command": "python3 -B -m unittest adapters.herdr.test_publisher",
+      "result": "pass",
+      "detail": "43 tests, receipt-bound"
+    },
+    {
+      "command": "python3 -B skills/herdr-graph-viewer/scripts/test_start_viewer.py",
+      "result": "pass",
+      "detail": "48 tests, receipt-bound"
+    },
+    {
+      "command": "npm test -- --run",
+      "result": "pass",
+      "detail": "4 files and 45 tests, receipt-bound"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "detail": "TypeScript and Vite production build, receipt-bound"
+    },
+    {
+      "command": "node tests/browser-smoke.mjs",
+      "result": "pass",
+      "detail": "Fresh integration-g4 run proved post-open arrival, six-second expiry, and exact selection persistence"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "detail": "Candidate range and worktree checks were clean"
+    }
+  ],
+  "failures": [],
+  "failure_class": null,
+  "targeted_criteria": [],
+  "attribution": {
+    "executor": "p5_integration",
+    "orchestrator": "meta-harness",
+    "learning_owner": "presence_summary_selector",
+    "failure_domain": "ui_presence_freshness",
+    "confidence": "high",
+    "reason": "The final fix-forward and independent QC close both earlier executable findings on the exact reviewed candidate"
+  }
+}
