@@ -1,0 +1,22 @@
+{
+  "schema_version": "meta-harness-state/v1",
+  "iteration": 0,
+  "status": "PLANNED",
+  "orchestration_mode": "Parallel agents via herdr-orchestrator",
+  "agent_split": "Spawn",
+  "reason": "Publisher and frontend ownership are disjoint; P5/P6 and P7-P9 remain independent gates.",
+  "hypothesis": "Reusing publisher polling for bounded transition events and removing unproven fallback edges fixes both reported symptoms without hooks or cross-skill coupling.",
+  "targeted_criteria": [
+    "event_correctness",
+    "relationship_truthfulness",
+    "runtime_efficiency",
+    "compatibility_isolation",
+    "live_operator_evidence"
+  ],
+  "what_not_to_retry": [
+    "Do not infer edges from roles, P numbers, status order, or pane layout.",
+    "Do not stream raw prompts, commands, or tool activity.",
+    "Do not modify herdr-orchestrator, writing-plans, Superpowers, Herdr, or sibling skills."
+  ]
+}
+

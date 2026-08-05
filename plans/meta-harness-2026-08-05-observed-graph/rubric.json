@@ -1,0 +1,38 @@
+{
+  "schema_version": "meta-harness-rubric/v1",
+  "intent": "IMPROVE",
+  "locked": true,
+  "target": 8.5,
+  "target_min": 8.0,
+  "max_iter": "until-pass",
+  "budget": "120m",
+  "orchestration_mode": "Parallel agents via herdr-orchestrator",
+  "criteria": [
+    {
+      "id": "event_correctness",
+      "weight": 0.25,
+      "description": "Fresh graphs contain useful timestamped lifecycle events; changes are ordered, deduplicated, and bounded."
+    },
+    {
+      "id": "relationship_truthfulness",
+      "weight": 0.25,
+      "description": "Observed flows emit no fabricated edges and explain unavailable relationships; custom topology remains exact."
+    },
+    {
+      "id": "runtime_efficiency",
+      "weight": 0.15,
+      "description": "Existing polling is reused, unchanged polls do not publish, and retained observation state is bounded."
+    },
+    {
+      "id": "compatibility_isolation",
+      "weight": 0.2,
+      "description": "Protocol, presence, historical routing, workspace isolation, and all sibling skills remain unchanged."
+    },
+    {
+      "id": "live_operator_evidence",
+      "weight": 0.15,
+      "description": "Browser and current-workspace runtime evidence clearly distinguish observed from declared topology and show event recency."
+    }
+  ]
+}
+
