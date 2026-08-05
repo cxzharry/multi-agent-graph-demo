@@ -159,6 +159,43 @@ describe('layoutRoleGraph', () => {
 
     expect(result.feedbackGutterX).toBeGreaterThan(graphRight);
   });
+
+  test('lays out observed topology with no edges into aligned layers', () => {
+    const observedNodes: RoleNode[] = [
+      {
+        id: 'orchestrator',
+        role: 'Orchestrator',
+        assignee: 'P1',
+        layer: 0,
+        status: 'running',
+        task: 'Coordinate current Herdr session',
+        generation: 1,
+      },
+      ...['agent-a', 'agent-b', 'agent-c'].map(id => ({
+        id,
+        role: id,
+        assignee: id,
+        layer: 1,
+        status: 'pending' as const,
+        task: 'Participate in current Herdr session',
+        generation: 1,
+      })),
+    ];
+
+    const result = layoutRoleGraph(observedNodes, []);
+    const positions = new Map(
+      result.positionedNodes.map(node => [node.id, node.position]),
+    );
+
+    expect(result.forwardEdges).toEqual([]);
+    for (const id of ['agent-a', 'agent-b', 'agent-c']) {
+      expect(positions.get('orchestrator')!.y).toBeLessThan(
+        positions.get(id)!.y,
+      );
+    }
+    expect(positions.get('agent-a')!.y).toBe(positions.get('agent-b')!.y);
+    expect(positions.get('agent-b')!.y).toBe(positions.get('agent-c')!.y);
+  });
 });
 
 describe('getFeedbackPath', () => {

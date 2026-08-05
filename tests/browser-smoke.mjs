@@ -258,15 +258,8 @@ try {
         generation: 1,
       },
     ],
-    edges: [
-      {
-        id: 'publisher-to-review',
-        source: generatedNodeId,
-        target: opaqueNodeId,
-        kind: 'forward',
-        status: 'active',
-      },
-    ],
+    // Observed topology proves no fabricated relationships.
+    edges: [],
     events: [
       {
         id: 'epoch-seconds-event',
@@ -562,6 +555,16 @@ try {
     }).toString(),
   );
   await waitForNodeCount(page, persona.nodes.length);
+  // Observed topology draws no relationships and explains why, while still
+  // surfacing timestamped lifecycle events for every current node.
+  assert.equal(await page.locator('.forward-edge').count(), 0);
+  assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 0);
+  await page.getByTestId('relationship-notice').waitFor();
+  assert.match(
+    await page.getByTestId('relationship-notice').innerText(),
+    /relationships unavailable/i,
+  );
+  assert.ok(await page.locator('.timeline-item').count() > 0);
   const generatedNode = page.locator(`[data-node-id="${generatedNodeId}"]`);
   const opaqueNode = page.locator(`[data-node-id="${opaqueNodeId}"]`);
   assert.equal(await generatedNode.locator('h3').textContent(), 'Publisher');
@@ -598,6 +601,12 @@ try {
     }).toString(),
   );
   await waitForNodeCount(page, branched.nodes.length);
+  // Declared custom topology keeps its authored relationships and shows no
+  // observed-topology notice.
+  assert.equal(
+    await page.locator('[data-testid="relationship-notice"]').count(),
+    0,
+  );
   await page.evaluate(
     () =>
       new Promise(resolve =>

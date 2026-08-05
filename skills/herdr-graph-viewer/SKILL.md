@@ -46,6 +46,13 @@ Use `--manifest /absolute/path/to/manifest.json` when the selected flow supplies
 - On cold launch, place the server right of P1 and the publisher below the server in that right-side rail. Preserve focus and never create either process below P1.
 - Do not install hooks or stream raw tool activity. Control mode publishes `workspace-state.json` revisions; session mode publishes only workspace-local agent status and presence.
 
+## Observed vs declared topology
+
+- **Events are bounded lifecycle observations, not raw activity.** Both publishers reuse their existing two-second poll to diff node lifecycle and emit timestamped `NODE_OBSERVED`, `NODE_STATUS_CHANGED`, `NODE_ASSIGNEE_CHANGED`, and `NODE_REMOVED` events. A fresh graph shows one event per current node immediately; unchanged polls add nothing. No prompt, command, tool, token, or session-log activity is streamed, and history stays bounded.
+- **Session and synthetic relationships are unavailable.** These flows observe nodes and statuses but have no trusted workflow-edge source, so they draw no edges, gates, or failure routes. P1 stays in layer 0 and observed agents in layer 1, and the viewer shows a concise `Observed topology — relationships unavailable` notice.
+- **Custom manifests remain the only exact topology source.** A declared manifest keeps its authored nodes, edges, gates, and failure loops byte-for-byte and shows no observed-topology notice.
+- Startup stays explicit: no global hook is installed and the viewer never starts itself.
+
 ## Verification
 
 Before reporting success, require launcher status `ready`, the expected `mode`, an exact workspace/run match, and a verified snapshot. Report whether server and publisher were started or reused.

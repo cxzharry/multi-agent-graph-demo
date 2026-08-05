@@ -195,6 +195,34 @@ select {
   font-size: 10px;
 }
 
+.relationship-notice {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  max-width: 320px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 11px;
+  border: 1px solid rgb(216 160 90 / 34%);
+  border-radius: 8px;
+  background: rgb(17 21 26 / 92%);
+  pointer-events: none;
+}
+
+.relationship-notice strong {
+  color: #e5c088;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.relationship-notice span {
+  color: #8995a5;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .empty-state {
   display: grid;
   place-items: center;

@@ -120,6 +120,9 @@ function App() {
   }, [layout.feedbackGutterX, layout.forwardEdges, snapshot]);
 
   const selectedValue = selection ? selectionQuery(selection) : '';
+  const observedTopology =
+    snapshot?.flowId === 'auto-operational' ||
+    snapshot?.flowId === 'live-session';
   const missingSelection = Boolean(
     selection &&
       !graphs.some(graph => graphMatchesSelection(graph, selection)),
@@ -204,6 +207,19 @@ function App() {
                 </span>
                 <span>Sequence {snapshot.sequence}</span>
               </div>
+              {observedTopology && (
+                <div
+                  className="relationship-notice"
+                  data-testid="relationship-notice"
+                  role="note"
+                >
+                  <strong>Observed topology — relationships unavailable</strong>
+                  <span>
+                    Live agents and statuses are observed directly. An exact
+                    custom topology is required to draw workflow relationships.
+                  </span>
+                </div>
+              )}
               <ReactFlow
                 key={`${snapshot.scopeId}\u001f${snapshot.runId}`}
                 nodes={nodes}
