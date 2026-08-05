@@ -12,6 +12,11 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from adapters.herdr.observed_events import ObservationLedger
+
 
 EVENT_LIMIT = 50
 LANE_STATUSES = {
@@ -173,16 +178,10 @@ def synthesize_manifest(state: dict) -> dict:
         "flowId": "auto-operational",
         "title": f"Auto operational view — {run_id}",
         "nodes": nodes,
-        "edges": [
-            {
-                "id": f"control-{node['id']}",
-                "source": "orchestrator",
-                "target": node["id"],
-                "kind": "forward",
-                "status": "active",
-            }
-            for node in nodes[1:]
-        ],
+        # Synthetic mode observes nodes and statuses but has no trusted
+        # workflow-edge source, so it fabricates no relationships. P1 stays in
+        # layer 0 and lanes in layer 1 for a readable disconnected layout.
+        "edges": [],
         "failurePolicies": [],
     }
 
@@ -413,6 +412,8 @@ def publish_if_changed(
     space_name: str,
     synthesize: bool = False,
     replace_current: bool = False,
+    ledger: ObservationLedger | None = None,
+    observed_at: str | None = None,
 ) -> int:
     """Publish the supplied state only when its revision changes."""
     if synthesize == (manifest_path is not None):
@@ -434,8 +435,35 @@ def publish_if_changed(
         workspace_id,
         space_name=space_name,
     )
+    _merge_observed_events(snapshot, ledger, observed_at)
     publish_snapshot(snapshot, endpoint, token, replace_current=replace_current)
     return snapshot["sequence"]
+
+
+def _merge_observed_events(
+    snapshot: dict,
+    ledger: ObservationLedger | None,
+    observed_at: str | None,
+) -> None:
+    """Append bounded observer events to authored events in place.
+
+    Authored ``workspace-state`` events keep their order and IDs; observer
+    events occupy a separate ``observed-`` ID namespace. The combined list is
+    capped and ``generatedAt`` advances to the newest valid event time so watch
+    mode alone supplies wall-clock observation timestamps.
+    """
+    if ledger is None:
+        return
+    ledger.observe(snapshot["nodes"], observed_at=observed_at)
+    combined = list(snapshot["events"]) + ledger.events
+    snapshot["events"] = combined[-EVENT_LIMIT:]
+    times = [
+        parsed
+        for event in snapshot["events"]
+        if (parsed := _timestamp(event.get("at"))) is not None
+    ]
+    if times:
+        snapshot["generatedAt"] = _format_timestamp(max(times))
 
 
 def _read_json(path: Path) -> dict:
@@ -630,6 +658,7 @@ def main() -> int:
     args = _parser().parse_args()
     last_revision = None
     replace_current = args.replace_current
+    ledger = ObservationLedger()
     while True:
         try:
             revision = publish_if_changed(
@@ -642,6 +671,7 @@ def main() -> int:
                 space_name=args.space_name,
                 synthesize=args.synthesize,
                 replace_current=replace_current,
+                ledger=ledger,
             )
             replace_current = False
             if revision != last_revision:

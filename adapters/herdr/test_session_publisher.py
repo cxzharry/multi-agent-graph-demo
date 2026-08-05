@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from adapters.herdr.observed_events import ObservationLedger
 from adapters.herdr.session_publisher import (
     _parser,
     build_session_snapshot,
@@ -128,6 +129,48 @@ class SessionSnapshotTests(unittest.TestCase):
         ]
 
     def test_builds_p1_rooted_agent_only_snapshot_with_full_session_identity(self):
+        ledger = ObservationLedger()
+        snapshot = build_session_snapshot(
+            agents=self.agents,
+            workspace_id="wK",
+            space_name="herdr-orchestrator",
+            p1_session_id=P1_SESSION,
+            p1_pane_id="wK:p1",
+            sequence=1,
+            ledger=ledger,
+            observed_at="2026-08-05T10:00:00Z",
+        )
+
+        self.assertEqual("herdr:wK", snapshot["scopeId"])
+        self.assertEqual(P1_SESSION, snapshot["runId"])
+        self.assertEqual("live-session", snapshot["flowId"])
+        self.assertEqual("current", snapshot["shortName"])
+        self.assertEqual("herdr-orchestrator", snapshot["spaceName"])
+        self.assertEqual("orchestrator", snapshot["nodes"][0]["id"])
+        self.assertEqual(0, snapshot["nodes"][0]["layer"])
+        self.assertEqual("running", snapshot["nodes"][0]["status"])
+        self.assertEqual("passed", snapshot["nodes"][2]["status"])
+        self.assertTrue(all(node["layer"] == 1 for node in snapshot["nodes"][1:]))
+
+        # Observed topology proves no fabricated relationships.
+        self.assertEqual([], snapshot["edges"])
+        self.assertEqual([], snapshot["failurePolicies"])
+        self.assertIsNone(snapshot["activeFailureRoute"])
+
+        # Every current node yields one immediate timestamped lifecycle event.
+        self.assertEqual(len(snapshot["nodes"]), len(snapshot["events"]))
+        self.assertTrue(
+            all(event["at"].endswith("Z") for event in snapshot["events"])
+        )
+        self.assertEqual(
+            {"NODE_OBSERVED"}, {event["kind"] for event in snapshot["events"]}
+        )
+        self.assertEqual(
+            {node["id"] for node in snapshot["nodes"]},
+            {event["nodeId"] for event in snapshot["events"]},
+        )
+
+    def test_snapshot_without_ledger_is_deterministic_and_eventless(self):
         snapshot = build_session_snapshot(
             agents=self.agents,
             workspace_id="wK",
@@ -137,19 +180,11 @@ class SessionSnapshotTests(unittest.TestCase):
             sequence=1,
         )
 
-        self.assertEqual("herdr:wK", snapshot["scopeId"])
-        self.assertEqual(P1_SESSION, snapshot["runId"])
-        self.assertEqual("current", snapshot["shortName"])
-        self.assertEqual("herdr-orchestrator", snapshot["spaceName"])
-        self.assertEqual("orchestrator", snapshot["nodes"][0]["id"])
-        self.assertEqual("running", snapshot["nodes"][0]["status"])
-        self.assertEqual("passed", snapshot["nodes"][2]["status"])
-        self.assertEqual(
-            {("orchestrator", node["id"]) for node in snapshot["nodes"][1:]},
-            {(edge["source"], edge["target"]) for edge in snapshot["edges"]},
-        )
+        self.assertEqual([], snapshot["edges"])
+        self.assertEqual([], snapshot["events"])
 
     def test_publishes_only_when_projected_agent_status_changes(self):
+        ledger = ObservationLedger()
         with mock.patch(
             "adapters.herdr.session_publisher.publish_snapshot"
         ) as publish:
@@ -162,6 +197,8 @@ class SessionSnapshotTests(unittest.TestCase):
                 "http://127.0.0.1:4173/api/snapshots",
                 None,
                 None,
+                ledger=ledger,
+                observed_at="2026-08-05T10:00:00Z",
             )
             reordered = copy.deepcopy(list(reversed(self.agents)))
             reordered[0]["focused"] = True
@@ -174,6 +211,8 @@ class SessionSnapshotTests(unittest.TestCase):
                 "http://127.0.0.1:4173/api/snapshots",
                 None,
                 first,
+                ledger=ledger,
+                observed_at="2026-08-05T10:00:02Z",
             )
             changed_agents = copy.deepcopy(self.agents)
             changed_agents[1]["agent_status"] = "done"
@@ -186,12 +225,19 @@ class SessionSnapshotTests(unittest.TestCase):
                 "http://127.0.0.1:4173/api/snapshots",
                 None,
                 unchanged,
+                ledger=ledger,
+                observed_at="2026-08-05T10:00:04Z",
             )
 
         self.assertEqual(2, publish.call_count)
         self.assertIs(first, unchanged)
         self.assertEqual(1, first["sequence"])
         self.assertEqual(2, changed["sequence"])
+        # The initial publish records one lifecycle event per current node; the
+        # status change appends exactly one more without duplicating the rest.
+        self.assertEqual(len(self.agents), len(first["events"]))
+        self.assertEqual(len(self.agents) + 1, len(changed["events"]))
+        self.assertEqual("NODE_STATUS_CHANGED", changed["events"][-1]["kind"])
 
     def test_heartbeat_posts_compact_identity_to_presence_endpoint(self):
         response = mock.MagicMock()

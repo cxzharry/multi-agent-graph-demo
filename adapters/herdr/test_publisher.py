@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from adapters.herdr.observed_events import ObservationLedger
 from adapters.herdr.publisher import (
     PublisherError,
     _parser,
@@ -202,7 +203,7 @@ class SyntheticManifestTests(unittest.TestCase):
             },
         )
 
-    def test_synthetic_manifest_is_deterministic_and_only_claims_control_edges(self):
+    def test_synthetic_manifest_is_deterministic_and_emits_no_fabricated_edges(self):
         state = fixture_state()
         state["lanes"]["implementation_a"].update(
             {
@@ -218,10 +219,21 @@ class SyntheticManifestTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual([], first["failurePolicies"])
         self.assertTrue(first["title"].startswith("Auto operational view"))
-        self.assertEqual(
-            {("orchestrator", node["id"]) for node in first["nodes"][1:]},
-            {(edge["source"], edge["target"]) for edge in first["edges"]},
-        )
+        # Synthetic mode has no trusted workflow-edge source, so it fabricates
+        # no relationships even though it still lays P1 and lanes into layers.
+        self.assertEqual([], first["edges"])
+        self.assertEqual(0, first["nodes"][0]["layer"])
+        self.assertTrue(all(node["layer"] == 1 for node in first["nodes"][1:]))
+
+    def test_synthetic_snapshot_contains_no_edges_or_failure_route(self):
+        state = fixture_state()
+
+        snapshot = build_snapshot(state, synthesize_manifest(state), "wK", SPACE_NAME)
+
+        self.assertEqual([], snapshot["edges"])
+        self.assertEqual([], snapshot["failurePolicies"])
+        self.assertIsNone(snapshot["activeFailureRoute"])
+        assert_protocol_valid(self, snapshot)
 
     def test_synthetic_snapshot_contains_lane_added_at_current_revision(self):
         state = fixture_state()
@@ -430,6 +442,26 @@ class BuildSnapshotTests(unittest.TestCase):
 
         self.assertEqual(original_state, state)
         self.assertEqual(original_manifest, manifest)
+
+    def test_custom_manifest_edges_and_failure_policies_remain_exact(self):
+        manifest = fixture_manifest()
+
+        snapshot = build_snapshot(fixture_state(), manifest, "wK", SPACE_NAME)
+
+        # Declared topology is authoritative: authored forward edges, gate, and
+        # failure loop survive observer integration byte-for-byte.
+        self.assertEqual(
+            [
+                (edge["source"], edge["target"], edge["kind"])
+                for edge in manifest["edges"]
+            ],
+            [
+                (edge["source"], edge["target"], edge["kind"])
+                for edge in snapshot["edges"]
+            ],
+        )
+        self.assertEqual(manifest["failurePolicies"], snapshot["failurePolicies"])
+        self.assertEqual("correction-owner", snapshot["activeFailureRoute"]["returnToNodeId"])
 
     def test_custom_node_tracks_reassignment_tip_and_chain_events(self):
         state = fixture_state()
@@ -744,6 +776,91 @@ class PublishingTests(unittest.TestCase):
         snapshot = publish.call_args.args[0]
         self.assertTrue(snapshot["title"].startswith("Auto operational view"))
         self.assertEqual("herdr-orchestrator", snapshot["spaceName"])
+
+    def test_watch_publication_appends_bounded_observed_events(self):
+        ledger = ObservationLedger()
+        base = fixture_state()
+        base["events"] = []
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(base), encoding="utf-8")
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                first = publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    None,
+                    synthesize=True,
+                    space_name="herdr-orchestrator",
+                    ledger=ledger,
+                    observed_at="2026-08-05T10:00:00Z",
+                )
+
+                changed = copy.deepcopy(base)
+                changed["revision"] = 43
+                changed["lanes"]["implementation_a"]["state"] = "ACCEPTED"
+                state_path.write_text(json.dumps(changed), encoding="utf-8")
+                second = publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    first,
+                    synthesize=True,
+                    space_name="herdr-orchestrator",
+                    ledger=ledger,
+                    observed_at="2026-08-05T10:00:02Z",
+                )
+
+                repeat = publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    second,
+                    synthesize=True,
+                    space_name="herdr-orchestrator",
+                    ledger=ledger,
+                    observed_at="2026-08-05T10:00:04Z",
+                )
+
+            first_snapshot = publish.call_args_list[0].args[0]
+            second_snapshot = publish.call_args_list[1].args[0]
+
+        self.assertEqual(42, first)
+        self.assertEqual(43, second)
+        self.assertEqual(43, repeat)
+        # A repeated revision publishes nothing more than the two real changes.
+        self.assertEqual(2, publish.call_count)
+
+        initial_kinds = [
+            event["kind"]
+            for event in first_snapshot["events"]
+            if event["id"].startswith("observed-")
+        ]
+        self.assertTrue(initial_kinds)
+        self.assertEqual({"NODE_OBSERVED"}, set(initial_kinds))
+        self.assertTrue(
+            all(event["at"].endswith("Z") for event in first_snapshot["events"])
+        )
+
+        status_events = [
+            event
+            for event in second_snapshot["events"]
+            if event["id"].startswith("observed-")
+            and event["kind"] == "NODE_STATUS_CHANGED"
+        ]
+        self.assertEqual(1, len(status_events))
+        self.assertLessEqual(len(second_snapshot["events"]), 50)
+        self.assertEqual(
+            second_snapshot["events"][-1]["at"], second_snapshot["generatedAt"]
+        )
 
     def test_rejects_missing_or_conflicting_publisher_modes_before_network(self):
         with tempfile.TemporaryDirectory() as directory:

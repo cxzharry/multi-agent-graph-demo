@@ -15,6 +15,7 @@ from pathlib import Path
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from adapters.herdr.observed_events import ObservationLedger
 from adapters.herdr.publisher import (
     PublisherError,
     _positive_interval,
@@ -94,8 +95,17 @@ def build_session_snapshot(
     p1_session_id: str,
     p1_pane_id: str,
     sequence: int,
+    *,
+    ledger: ObservationLedger | None = None,
+    observed_at: str | None = None,
 ) -> dict:
-    """Build one P1-rooted graph from exact workspace-local agents."""
+    """Build one P1-rooted observed graph from exact workspace-local agents.
+
+    Session mode has nodes and statuses but no trusted workflow-edge source, so
+    it never fabricates relationships: ``edges``, ``failurePolicies`` and
+    ``activeFailureRoute`` are empty. When a ledger is supplied it turns the
+    already-built nodes into bounded, timestamped lifecycle events.
+    """
     local_agents = select_workspace_agents(agents, workspace_id)
     p1 = next(
         (
@@ -137,20 +147,23 @@ def build_session_snapshot(
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "title": f"Current Herdr session — {space_name}",
         "nodes": nodes,
-        "edges": [
-            {
-                "id": f"control-{node['id']}",
-                "source": "orchestrator",
-                "target": node["id"],
-                "kind": "forward",
-                "status": "active",
-            }
-            for node in nodes[1:]
-        ],
+        "edges": [],
         "failurePolicies": [],
         "activeFailureRoute": None,
-        "events": [],
+        "events": _observed_events(ledger, nodes, observed_at),
     }
+
+
+def _observed_events(
+    ledger: ObservationLedger | None,
+    nodes: list[dict],
+    observed_at: str | None,
+) -> list[dict]:
+    """Return the ledger's bounded lifecycle history for the current nodes."""
+    if ledger is None:
+        return []
+    ledger.observe(nodes, observed_at=observed_at)
+    return ledger.events
 
 
 def _projection(snapshot: dict) -> dict:
@@ -169,8 +182,11 @@ def publish_if_changed(
     endpoint: str,
     token: str | None,
     last_snapshot: dict | None,
+    *,
+    ledger: ObservationLedger | None = None,
+    observed_at: str | None = None,
 ) -> dict:
-    """Publish only projected topology or status changes."""
+    """Publish only projected topology, status, or lifecycle-event changes."""
     sequence = 1 if last_snapshot is None else last_snapshot["sequence"] + 1
     snapshot = build_session_snapshot(
         agents,
@@ -179,6 +195,8 @@ def publish_if_changed(
         p1_session_id,
         p1_pane_id,
         sequence,
+        ledger=ledger,
+        observed_at=observed_at,
     )
     if last_snapshot is not None and _projection(snapshot) == _projection(
         last_snapshot
@@ -204,6 +222,7 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _parser().parse_args()
     last_snapshot = None
+    ledger = ObservationLedger()
     while True:
         try:
             agents = select_workspace_agents(list_agents(), args.workspace_id)
@@ -216,6 +235,7 @@ def main() -> int:
                 args.endpoint,
                 args.token,
                 last_snapshot,
+                ledger=ledger,
             )
             heartbeat_presence(args.endpoint, args.token, last_snapshot)
         except (
