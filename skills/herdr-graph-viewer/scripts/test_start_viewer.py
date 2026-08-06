@@ -929,6 +929,15 @@ class StartViewerTest(unittest.TestCase):
             "agent_session": {"kind": "id", "value": session_id},
         }
 
+    def agent_record_without_name(
+        self, workspace: str, pane: str, session_id: str
+    ) -> dict:
+        return {
+            "workspace_id": workspace,
+            "pane_id": pane,
+            "agent_session": {"kind": "id", "value": session_id},
+        }
+
     def write_manifest(self, path: Path) -> Path:
         path.write_text(
             json.dumps(
@@ -1166,6 +1175,134 @@ class StartViewerTest(unittest.TestCase):
                 identity = launcher._resolve_p1_identity("w1", runs_root=root)
 
             self.assertEqual(identity, launcher.P1Identity("w1:p1", "p1-session"))
+
+    def test_resolves_missing_name_from_unambiguous_bound_controller(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                session_id="p1-session",
+                run_id="current-run",
+            )
+            self.bind_p1_controller(state, "p1_orchestrator_w1")
+            agent = self.agent_record_without_name("w1", "w1:p1", "p1-session")
+            self.assertNotIn("name", agent)
+            response = {"result": {"agents": [agent]}}
+
+            with mock.patch.object(launcher, "_herdr", return_value=response):
+                identity = launcher._resolve_p1_identity("w1", runs_root=root)
+
+            self.assertEqual(identity, launcher.P1Identity("w1:p1", "p1-session"))
+
+    def test_missing_name_fallback_rejects_mismatched_binding(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                session_id="p1-session",
+                run_id="current-run",
+            )
+            self.bind_p1_controller(state, "p1_orchestrator_w1")
+            agents = {
+                "pane": self.agent_record_without_name(
+                    "w1", "w1:p2", "p1-session"
+                ),
+                "session": self.agent_record_without_name(
+                    "w1", "w1:p1", "other-session"
+                ),
+                "workspace": self.agent_record_without_name(
+                    "w2", "w1:p1", "p1-session"
+                ),
+            }
+
+            for mismatch, agent in agents.items():
+                with self.subTest(mismatch=mismatch), mock.patch.object(
+                    launcher,
+                    "_herdr",
+                    return_value={"result": {"agents": [agent]}},
+                ), self.assertRaises(launcher.LauncherError) as raised:
+                    launcher._resolve_p1_identity("w1", runs_root=root)
+
+                self.assertEqual(raised.exception.code, "p1_identity_error")
+
+    def test_missing_name_fallback_rejects_duplicate_or_ambiguous_controllers(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_state(
+                root,
+                "first",
+                workspace="w1",
+                pane="w1:p1",
+                session_id="p1-session-1",
+                run_id="first-run",
+            )
+            second = self.write_state(
+                root,
+                "second",
+                workspace="w1",
+                pane="w1:p2",
+                session_id="p1-session-2",
+                run_id="second-run",
+            )
+            self.bind_p1_controller(first, "p1_orchestrator_w1")
+            self.bind_p1_controller(second, "p1_orchestrator_w1")
+            first_agent = self.agent_record_without_name(
+                "w1", "w1:p1", "p1-session-1"
+            )
+            second_agent = self.agent_record_without_name(
+                "w1", "w1:p2", "p1-session-2"
+            )
+            cases = {
+                "duplicate": [first_agent, first_agent.copy()],
+                "ambiguous": [first_agent, second_agent],
+            }
+
+            for conflict, agents in cases.items():
+                with self.subTest(conflict=conflict), mock.patch.object(
+                    launcher,
+                    "_herdr",
+                    return_value={"result": {"agents": agents}},
+                ), self.assertRaises(launcher.LauncherError) as raised:
+                    launcher._resolve_p1_identity("w1", runs_root=root)
+
+                self.assertEqual(raised.exception.code, "p1_identity_error")
+
+    def test_control_bound_fallback_rejects_non_null_wrong_name(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                session_id="p1-session",
+                run_id="current-run",
+            )
+            self.bind_p1_controller(state, "p1_orchestrator_w1")
+            response = {
+                "result": {
+                    "agents": [
+                        self.agent_record("w1", "w1:p1", "p1-session", "p2_impl")
+                    ]
+                }
+            }
+
+            with mock.patch.object(
+                launcher, "_herdr", return_value=response
+            ), self.assertRaises(launcher.LauncherError) as raised:
+                launcher._resolve_p1_identity("w1", runs_root=root)
+
+            self.assertEqual(raised.exception.code, "p1_identity_error")
 
     def test_null_name_controller_fallback_rejects_ambiguous_bindings(self):
         launcher = self.require_launcher()

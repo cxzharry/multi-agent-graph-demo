@@ -478,7 +478,7 @@ def _resolve_p1_identity(
                 identity = P1Identity(pane_id, session_id)
                 if agent.get("name") == "p1_orchestrator":
                     matches.append(identity)
-                elif "name" in agent and agent["name"] is None:
+                elif agent.get("name") is None:
                     unnamed.append(identity)
     if unnamed and runs_root is not None:
         bound = _bound_controller_p1_identities(runs_root, workspace_id)
