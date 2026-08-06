@@ -422,15 +422,48 @@ def _result_value(response: dict[str, Any], key: str) -> Any:
     return response.get("result", {}).get(key)
 
 
-def _resolve_p1_identity(workspace_id: str) -> P1Identity:
+def _bound_controller_p1_identities(
+    runs_root: Path, workspace_id: str
+) -> set[P1Identity]:
+    matches: set[P1Identity] = set()
+    workspace_root = runs_root.expanduser() / workspace_id
+    for path in sorted(workspace_root.rglob("workspace-state.json")):
+        try:
+            state = _load_state(path, workspace_id).value
+        except LauncherError:
+            continue
+        controller = state.get("controller")
+        if (
+            not isinstance(controller, dict)
+            or controller.get("workspace_id") != workspace_id
+            or controller.get("role_name") != "p1_orchestrator"
+            or not isinstance(controller.get("agent_name"), str)
+            or not controller["agent_name"]
+        ):
+            continue
+        pane_id = controller.get("pane_id")
+        session_id = controller.get("session_id")
+        if (
+            isinstance(pane_id, str)
+            and pane_id
+            and isinstance(session_id, str)
+            and session_id
+        ):
+            matches.add(P1Identity(pane_id, session_id))
+    return matches
+
+
+def _resolve_p1_identity(
+    workspace_id: str, *, runs_root: Path | None = None
+) -> P1Identity:
     agents = _result_value(_herdr("agent", "list"), "agents")
     matches: list[P1Identity] = []
+    unnamed: list[P1Identity] = []
     if isinstance(agents, list):
         for agent in agents:
             if (
                 not isinstance(agent, dict)
                 or agent.get("workspace_id") != workspace_id
-                or agent.get("name") != "p1_orchestrator"
             ):
                 continue
             pane_id = agent.get("pane_id")
@@ -442,7 +475,14 @@ def _resolve_p1_identity(workspace_id: str) -> P1Identity:
                 and isinstance(session_id, str)
                 and session_id
             ):
-                matches.append(P1Identity(pane_id, session_id))
+                identity = P1Identity(pane_id, session_id)
+                if agent.get("name") == "p1_orchestrator":
+                    matches.append(identity)
+                elif "name" in agent and agent["name"] is None:
+                    unnamed.append(identity)
+    if unnamed and runs_root is not None:
+        bound = _bound_controller_p1_identities(runs_root, workspace_id)
+        matches.extend(identity for identity in unnamed if identity in bound)
     if len(matches) != 1:
         raise LauncherError(
             "p1_identity_error",
@@ -1081,7 +1121,9 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                 explicit=args.state,
             )
         else:
-            current_p1 = _resolve_p1_identity(workspace_id)
+            current_p1 = _resolve_p1_identity(
+                workspace_id, runs_root=args.runs_root
+            )
             selected = select_state(
                 args.runs_root,
                 workspace_id,
