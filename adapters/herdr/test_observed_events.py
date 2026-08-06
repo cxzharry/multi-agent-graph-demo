@@ -95,6 +95,22 @@ class TransitionTests(unittest.TestCase):
             [(event["nodeId"], event["kind"]) for event in events],
         )
 
+    def test_generation_only_change_emits_one_event_with_new_generation(self):
+        events = self.ledger.observe(
+            [
+                node("orchestrator", status="running", assignee="P1", generation=2),
+                node("agent-b"),
+            ],
+            observed_at="2026-08-05T10:00:02Z",
+        )
+
+        self.assertEqual(1, len(events))
+        self.assertEqual("observed-000003", events[0]["id"])
+        self.assertEqual("NODE_GENERATION_CHANGED", events[0]["kind"])
+        self.assertEqual("orchestrator", events[0]["nodeId"])
+        self.assertEqual(2, events[0]["generation"])
+        self.assertIn("generation 2", events[0]["message"])
+
     def test_removed_node_emits_single_terminal_event(self):
         events = self.ledger.observe(
             [node("orchestrator", status="running", assignee="P1")],

@@ -20,7 +20,8 @@ _KIND_ORDER = {
     "NODE_OBSERVED": 0,
     "NODE_ASSIGNEE_CHANGED": 1,
     "NODE_STATUS_CHANGED": 2,
-    "NODE_REMOVED": 3,
+    "NODE_GENERATION_CHANGED": 3,
+    "NODE_REMOVED": 4,
 }
 
 
@@ -103,6 +104,8 @@ class ObservationLedger:
                 transitions.append((node_id, "NODE_STATUS_CHANGED"))
             if projection["assignee"] != prior["assignee"]:
                 transitions.append((node_id, "NODE_ASSIGNEE_CHANGED"))
+            if projection["generation"] != prior["generation"]:
+                transitions.append((node_id, "NODE_GENERATION_CHANGED"))
         for node_id in previous:
             if node_id not in current:
                 transitions.append((node_id, "NODE_REMOVED"))
@@ -139,6 +142,11 @@ def _message(kind: str, node_id: str, projection: dict) -> str:
         return f"{node_id} changed status to {status}"
     if kind == "NODE_ASSIGNEE_CHANGED":
         return f"{node_id} reassigned to {assignee}"
+    if kind == "NODE_GENERATION_CHANGED":
+        generation = projection.get("generation")
+        if not isinstance(generation, int) or isinstance(generation, bool):
+            generation = "unknown"
+        return f"{node_id} changed to generation {generation}"
     if kind == "NODE_REMOVED":
         return f"{node_id} is no longer observed"
     return f"{node_id} {kind}"
