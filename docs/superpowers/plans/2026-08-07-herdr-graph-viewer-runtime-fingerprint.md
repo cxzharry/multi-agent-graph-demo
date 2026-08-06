@@ -77,8 +77,7 @@ Build a minimal viewer tree with server, shared, src, index, package/lock, Vite,
 - [ ] **Step 3: Run RED**
 
 ```bash
-python3 -B -m unittest \
-  skills.herdr-graph-viewer.scripts.test_start_viewer.RuntimeFingerprintTest -v
+python3 -B -m unittest skills/herdr-graph-viewer/scripts/test_start_viewer.py -v
 ```
 
 Expected: FAIL because the fingerprint APIs do not exist.
@@ -357,7 +356,7 @@ Return old session sequence 111 first, then 112 with the desired fingerprint. Re
 
 - [ ] **Step 5: Run launcher RED**
 
-Run: `python3 -B -m unittest skills.herdr-graph-viewer.scripts.test_start_viewer -v`
+Run: `python3 -B -m unittest skills/herdr-graph-viewer/scripts/test_start_viewer.py -v`
 
 Expected: FAIL on classification, migration, replacement, command, and readiness assertions.
 
@@ -400,7 +399,7 @@ Browser smoke requires a non-empty health `runtimeFingerprint` while retaining t
 - [ ] **Step 10: Run GREEN and commit**
 
 ```bash
-python3 -B -m unittest skills.herdr-graph-viewer.scripts.test_start_viewer -v
+python3 -B -m unittest skills/herdr-graph-viewer/scripts/test_start_viewer.py -v
 npm test -- --run
 npm run build
 node tests/browser-smoke.mjs
@@ -427,7 +426,7 @@ P5 validates P2/P3/P4 receipts, verifies disjoint ownership, and cherry-picks P2
 
 ```bash
 python3 -B -m unittest discover -s adapters/herdr -p 'test_*.py' -v
-python3 -B -m unittest skills.herdr-graph-viewer.scripts.test_start_viewer -v
+python3 -B -m unittest skills/herdr-graph-viewer/scripts/test_start_viewer.py -v
 npm test -- --run
 npm run build
 node tests/browser-smoke.mjs
@@ -520,7 +519,7 @@ lanes:
       - skills/herdr-graph-viewer/SKILL.md
     prerequisites: [approved_spec, approved_plan]
     acceptance:
-      - python3 -B -m unittest skills.herdr-graph-viewer.scripts.test_start_viewer -v
+      - python3 -B -m unittest skills/herdr-graph-viewer/scripts/test_start_viewer.py -v
       - npm test -- --run
       - npm run build
       - node tests/browser-smoke.mjs
