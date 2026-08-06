@@ -5,9 +5,11 @@ import json
 import subprocess
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
+import adapters.herdr.publisher as publisher_module
 from adapters.herdr.observed_events import ObservationLedger
 from adapters.herdr.publisher import (
     PublisherError,
@@ -290,6 +292,24 @@ class SyntheticManifestTests(unittest.TestCase):
 
 
 class BuildSnapshotTests(unittest.TestCase):
+    def test_snapshot_defaults_to_unmanaged_publisher_fingerprint(self):
+        snapshot = build_snapshot(
+            fixture_state(), fixture_manifest(), "wK", SPACE_NAME
+        )
+
+        self.assertEqual("unmanaged", snapshot["publisherFingerprint"])
+
+    def test_snapshot_includes_supplied_publisher_fingerprint(self):
+        snapshot = build_snapshot(
+            fixture_state(),
+            fixture_manifest(),
+            "wK",
+            SPACE_NAME,
+            publisher_fingerprint="publisher-sha",
+        )
+
+        self.assertEqual("publisher-sha", snapshot["publisherFingerprint"])
+
     def test_emits_required_space_name(self):
         snapshot = build_snapshot(
             fixture_state(),
@@ -777,6 +797,30 @@ class PublishingTests(unittest.TestCase):
         self.assertTrue(snapshot["title"].startswith("Auto operational view"))
         self.assertEqual("herdr-orchestrator", snapshot["spaceName"])
 
+    def test_publication_includes_supplied_publisher_fingerprint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(fixture_state()), encoding="utf-8")
+
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    None,
+                    synthesize=True,
+                    space_name="herdr-orchestrator",
+                    publisher_fingerprint="publisher-sha",
+                )
+
+        self.assertEqual(
+            "publisher-sha", publish.call_args.args[0]["publisherFingerprint"]
+        )
+
     def test_watch_publication_appends_bounded_observed_events(self):
         ledger = ObservationLedger()
         base = fixture_state()
@@ -1078,6 +1122,85 @@ class PublishingTests(unittest.TestCase):
         )
 
 
+class CurrentSnapshotTests(unittest.TestCase):
+    def test_loads_the_exact_url_encoded_snapshot_with_auth(self):
+        snapshot = {
+            "scopeId": "herdr:w K/?",
+            "runId": "run id/?",
+            "sequence": 111,
+        }
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            snapshot
+        ).encode("utf-8")
+
+        with mock.patch(
+            "adapters.herdr.publisher.urllib.request.urlopen",
+            return_value=response,
+        ) as urlopen:
+            loaded = publisher_module.load_current_snapshot(
+                "http://127.0.0.1:4173/api/snapshots",
+                "secret",
+                "herdr:w K/?",
+                "run id/?",
+            )
+
+        query = urllib.parse.urlencode(
+            {"scopeId": "herdr:w K/?", "runId": "run id/?"}
+        )
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            f"http://127.0.0.1:4173/api/snapshot?{query}", request.full_url
+        )
+        self.assertEqual("Bearer secret", request.get_header("Authorization"))
+        self.assertEqual(snapshot, loaded)
+
+    def test_rejects_snapshot_from_a_different_scope_or_run(self):
+        for snapshot in (
+            {"scopeId": "herdr:wOther", "runId": "run-1", "sequence": 111},
+            {"scopeId": "herdr:wK", "runId": "run-other", "sequence": 111},
+        ):
+            with self.subTest(snapshot=snapshot):
+                response = mock.MagicMock()
+                response.__enter__.return_value.read.return_value = json.dumps(
+                    snapshot
+                ).encode("utf-8")
+                with mock.patch(
+                    "adapters.herdr.publisher.urllib.request.urlopen",
+                    return_value=response,
+                ):
+                    loaded = publisher_module.load_current_snapshot(
+                        "http://127.0.0.1:4173/api/snapshots",
+                        None,
+                        "herdr:wK",
+                        "run-1",
+                    )
+
+                self.assertIsNone(loaded)
+
+    def test_invalid_or_unavailable_snapshot_is_non_fatal(self):
+        invalid = mock.MagicMock()
+        invalid.__enter__.return_value.read.return_value = b"not-json"
+        cases = (invalid, TimeoutError("timed out"), OSError("unavailable"))
+
+        for result in cases:
+            with self.subTest(result=result):
+                patch = mock.patch(
+                    "adapters.herdr.publisher.urllib.request.urlopen",
+                    side_effect=result if isinstance(result, BaseException) else None,
+                    return_value=None if isinstance(result, BaseException) else result,
+                )
+                with patch:
+                    loaded = publisher_module.load_current_snapshot(
+                        "http://127.0.0.1:4173/api/snapshots",
+                        None,
+                        "herdr:wK",
+                        "run-1",
+                    )
+
+                self.assertIsNone(loaded)
+
+
 class ReadOnlyContractTests(unittest.TestCase):
     def test_source_has_no_process_pane_state_mutation_or_receipt_calls(self):
         import adapters.herdr.publisher as publisher
@@ -1126,6 +1249,42 @@ class ReadOnlyContractTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_runtime_fingerprint_defaults_to_unmanaged(self):
+        args = _parser().parse_args(
+            [
+                "--state",
+                "state.json",
+                "--synthesize",
+                "--workspace-id",
+                "wK",
+                "--space-name",
+                "herdr-orchestrator",
+                "--endpoint",
+                "http://127.0.0.1:4173/api/snapshots",
+            ]
+        )
+
+        self.assertEqual("unmanaged", args.runtime_fingerprint)
+
+    def test_accepts_runtime_fingerprint(self):
+        args = _parser().parse_args(
+            [
+                "--state",
+                "state.json",
+                "--synthesize",
+                "--workspace-id",
+                "wK",
+                "--space-name",
+                "herdr-orchestrator",
+                "--endpoint",
+                "http://127.0.0.1:4173/api/snapshots",
+                "--runtime-fingerprint",
+                "publisher-sha",
+            ]
+        )
+
+        self.assertEqual("publisher-sha", args.runtime_fingerprint)
+
     def test_requires_space_name(self):
         with mock.patch("sys.stderr", new_callable=io.StringIO):
             with self.assertRaises(SystemExit):

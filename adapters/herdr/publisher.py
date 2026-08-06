@@ -8,6 +8,7 @@ import copy
 import json
 import sys
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -258,6 +259,8 @@ def build_snapshot(
     manifest: dict,
     workspace_id: str,
     space_name: str,
+    *,
+    publisher_fingerprint: str = "unmanaged",
 ) -> dict:
     """Return one role-graph/v1 snapshot without I/O."""
     if state.get("workspace_id") != workspace_id:
@@ -301,6 +304,7 @@ def build_snapshot(
         "runId": run_id,
         "flowId": materialized["flowId"],
         "spaceName": space_name,
+        "publisherFingerprint": publisher_fingerprint,
         "sequence": revision,
         "generatedAt": generated_at,
         "title": materialized.get(
@@ -338,6 +342,33 @@ def publish_snapshot(
             raise PublisherError(
                 f"viewer rejected snapshot with HTTP {response.status}"
             )
+
+
+def load_current_snapshot(
+    endpoint: str,
+    token: str | None,
+    scope_id: str,
+    run_id: str,
+) -> dict | None:
+    """Load the current exact-scope snapshot, or return None when unavailable."""
+    query = urllib.parse.urlencode({"scopeId": scope_id, "runId": run_id})
+    snapshot_url = (
+        endpoint.removesuffix("/api/snapshots") + "/api/snapshot?" + query
+    )
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(snapshot_url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            snapshot = json.loads(response.read())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(snapshot, dict):
+        return None
+    if snapshot.get("scopeId") != scope_id or snapshot.get("runId") != run_id:
+        return None
+    return snapshot
 
 
 def heartbeat_presence(
@@ -414,6 +445,7 @@ def publish_if_changed(
     replace_current: bool = False,
     ledger: ObservationLedger | None = None,
     observed_at: str | None = None,
+    publisher_fingerprint: str = "unmanaged",
 ) -> int:
     """Publish the supplied state only when its revision changes."""
     if synthesize == (manifest_path is not None):
@@ -434,6 +466,7 @@ def publish_if_changed(
         manifest,
         workspace_id,
         space_name=space_name,
+        publisher_fingerprint=publisher_fingerprint,
     )
     _merge_observed_events(snapshot, ledger, observed_at)
     publish_snapshot(snapshot, endpoint, token, replace_current=replace_current)
@@ -650,6 +683,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--token")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--replace-current", action="store_true")
+    parser.add_argument("--runtime-fingerprint", default="unmanaged")
     parser.add_argument("--interval", type=_positive_interval, default=2.0)
     return parser
 
@@ -672,6 +706,7 @@ def main() -> int:
                 synthesize=args.synthesize,
                 replace_current=replace_current,
                 ledger=ledger,
+                publisher_fingerprint=args.runtime_fingerprint,
             )
             replace_current = False
             if revision != last_revision:

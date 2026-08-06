@@ -10,6 +10,16 @@ def node(node_id, status="running", assignee="P2", generation=1):
     return value
 
 
+def observed_event(counter, node_id="orchestrator", kind="NODE_OBSERVED"):
+    return {
+        "id": f"observed-{counter:06d}",
+        "at": "2026-08-07T00:00:00Z",
+        "nodeId": node_id,
+        "kind": kind,
+        "message": f"Observed {node_id}",
+    }
+
+
 class InitialObservationTests(unittest.TestCase):
     def test_first_observation_emits_one_event_per_node_and_noop_repeats(self):
         ledger = ObservationLedger(limit=4)
@@ -210,6 +220,65 @@ class RetentionAndSafetyTests(unittest.TestCase):
             ledger.observe([{"status": "running"}])
         with self.assertRaises(ObservationError):
             ledger.observe([{"id": "", "status": "running"}])
+
+
+class RestorationTests(unittest.TestCase):
+    def test_restores_history_projection_and_monotonic_counter(self):
+        nodes = [node("orchestrator", status="pending", assignee="P1")]
+        prior_events = [observed_event(1), observed_event(2)]
+
+        ledger = ObservationLedger.restore(nodes, prior_events, limit=4)
+        events = ledger.observe(
+            [node("orchestrator", status="running", assignee="P1")],
+            observed_at="2026-08-07T01:00:00Z",
+        )
+
+        self.assertEqual(prior_events + events, ledger.events)
+        self.assertEqual("observed-000003", events[0]["id"])
+        self.assertEqual("NODE_STATUS_CHANGED", events[0]["kind"])
+
+    def test_empty_history_creates_a_fresh_ledger(self):
+        nodes = [node("orchestrator", status="pending", assignee="P1")]
+
+        ledger = ObservationLedger.restore(nodes, [], limit=4)
+        events = ledger.observe(nodes, observed_at="2026-08-07T01:00:00Z")
+
+        self.assertEqual("observed-000001", events[0]["id"])
+        self.assertEqual("NODE_OBSERVED", events[0]["kind"])
+
+    def test_invalid_observed_history_creates_a_fresh_ledger(self):
+        nodes = [node("orchestrator", status="pending", assignee="P1")]
+        invalid_histories = (
+            ["not-an-event"],
+            [{"kind": "NODE_OBSERVED"}],
+            [{"id": "event-000001"}],
+            [{"id": "observed-foreign"}],
+        )
+
+        for history in invalid_histories:
+            with self.subTest(history=history):
+                ledger = ObservationLedger.restore(nodes, history, limit=4)
+                events = ledger.observe(
+                    nodes, observed_at="2026-08-07T01:00:00Z"
+                )
+                self.assertEqual("observed-000001", events[0]["id"])
+                self.assertEqual("NODE_OBSERVED", events[0]["kind"])
+
+    def test_restoration_retains_only_the_newest_bounded_suffix(self):
+        nodes = [node("orchestrator", status="pending", assignee="P1")]
+        prior_events = [observed_event(counter) for counter in range(1, 7)]
+
+        ledger = ObservationLedger.restore(nodes, prior_events, limit=4)
+
+        self.assertEqual(
+            [f"observed-{counter:06d}" for counter in range(3, 7)],
+            [event["id"] for event in ledger.events],
+        )
+        events = ledger.observe(
+            [node("orchestrator", status="running", assignee="P1")],
+            observed_at="2026-08-07T01:00:00Z",
+        )
+        self.assertEqual("observed-000007", events[0]["id"])
 
 
 if __name__ == "__main__":

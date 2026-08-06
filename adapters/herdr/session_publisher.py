@@ -15,12 +15,13 @@ from pathlib import Path
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from adapters.herdr.observed_events import ObservationLedger
+from adapters.herdr.observed_events import ObservationError, ObservationLedger
 from adapters.herdr.publisher import (
     PublisherError,
     _positive_interval,
     _space_name_argument,
     heartbeat_presence,
+    load_current_snapshot,
     publish_snapshot,
 )
 
@@ -98,6 +99,7 @@ def build_session_snapshot(
     *,
     ledger: ObservationLedger | None = None,
     observed_at: str | None = None,
+    publisher_fingerprint: str = "unmanaged",
 ) -> dict:
     """Build one P1-rooted observed graph from exact workspace-local agents.
 
@@ -143,6 +145,7 @@ def build_session_snapshot(
         "flowId": "live-session",
         "spaceName": _space_name_argument(space_name),
         "shortName": "current",
+        "publisherFingerprint": publisher_fingerprint,
         "sequence": sequence,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "title": f"Current Herdr session — {space_name}",
@@ -185,9 +188,12 @@ def publish_if_changed(
     *,
     ledger: ObservationLedger | None = None,
     observed_at: str | None = None,
+    publisher_fingerprint: str = "unmanaged",
+    sequence_floor: int = 1,
 ) -> dict:
     """Publish only projected topology, status, or lifecycle-event changes."""
-    sequence = 1 if last_snapshot is None else last_snapshot["sequence"] + 1
+    next_sequence = 1 if last_snapshot is None else last_snapshot["sequence"] + 1
+    sequence = max(sequence_floor, next_sequence)
     snapshot = build_session_snapshot(
         agents,
         workspace_id,
@@ -197,6 +203,7 @@ def publish_if_changed(
         sequence,
         ledger=ledger,
         observed_at=observed_at,
+        publisher_fingerprint=publisher_fingerprint,
     )
     if last_snapshot is not None and _projection(snapshot) == _projection(
         last_snapshot
@@ -215,14 +222,46 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--token")
     parser.add_argument("--watch", action="store_true")
+    parser.add_argument("--runtime-fingerprint", default="unmanaged")
+    parser.add_argument("--sequence-floor", type=_positive_sequence, default=1)
     parser.add_argument("--interval", type=_positive_interval, default=2.0)
     return parser
 
 
+def _positive_sequence(value: str) -> int:
+    sequence = int(value)
+    if sequence <= 0:
+        raise argparse.ArgumentTypeError("sequence floor must be greater than zero")
+    return sequence
+
+
 def main() -> int:
     args = _parser().parse_args()
-    last_snapshot = None
+    scope_id = f"herdr:{args.workspace_id}"
+    seed = load_current_snapshot(
+        args.endpoint,
+        args.token,
+        scope_id,
+        args.p1_session_id,
+    )
+    sequence_floor = args.sequence_floor
     ledger = ObservationLedger()
+    if seed is not None:
+        seed_sequence = seed.get("sequence")
+        if (
+            isinstance(seed_sequence, int)
+            and not isinstance(seed_sequence, bool)
+            and seed_sequence >= 0
+        ):
+            sequence_floor = max(sequence_floor, seed_sequence + 1)
+        nodes = seed.get("nodes")
+        events = seed.get("events")
+        if isinstance(nodes, list) and isinstance(events, list):
+            try:
+                ledger = ObservationLedger.restore(nodes, events)
+            except ObservationError:
+                ledger = ObservationLedger()
+    last_snapshot = None
     while True:
         try:
             agents = select_workspace_agents(list_agents(), args.workspace_id)
@@ -236,6 +275,8 @@ def main() -> int:
                 args.token,
                 last_snapshot,
                 ledger=ledger,
+                publisher_fingerprint=args.runtime_fingerprint,
+                sequence_floor=sequence_floor,
             )
             heartbeat_presence(args.endpoint, args.token, last_snapshot)
         except (

@@ -40,6 +40,34 @@ class ObservationLedger:
         self._counter = 0
         self._previous: dict[str, dict] | None = None
 
+    @classmethod
+    def restore(
+        cls,
+        nodes: list[dict],
+        events: list[dict],
+        limit: int = DEFAULT_LIMIT,
+    ) -> "ObservationLedger":
+        """Restore valid bounded observer history and its node projection."""
+        ledger = cls(limit)
+        if not events:
+            return ledger
+        retained = copy.deepcopy(events[-limit:])
+        counters = []
+        for event in retained:
+            event_id = event.get("id") if isinstance(event, dict) else None
+            if not isinstance(event_id, str) or not event_id.startswith(
+                "observed-"
+            ):
+                return cls(limit)
+            suffix = event_id.removeprefix("observed-")
+            if not suffix.isdigit():
+                return cls(limit)
+            counters.append(int(suffix))
+        ledger._events = retained
+        ledger._counter = max(counters)
+        ledger._previous = ledger._project(nodes)
+        return ledger
+
     def observe(
         self,
         nodes: list[dict],

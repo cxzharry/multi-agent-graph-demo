@@ -170,6 +170,31 @@ class SessionSnapshotTests(unittest.TestCase):
             {event["nodeId"] for event in snapshot["events"]},
         )
 
+    def test_snapshot_defaults_to_unmanaged_publisher_fingerprint(self):
+        snapshot = build_session_snapshot(
+            self.agents,
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            1,
+        )
+
+        self.assertEqual("unmanaged", snapshot["publisherFingerprint"])
+
+    def test_snapshot_includes_supplied_publisher_fingerprint(self):
+        snapshot = build_session_snapshot(
+            self.agents,
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            1,
+            publisher_fingerprint="publisher-sha",
+        )
+
+        self.assertEqual("publisher-sha", snapshot["publisherFingerprint"])
+
     def test_snapshot_without_ledger_is_deterministic_and_eventless(self):
         snapshot = build_session_snapshot(
             agents=self.agents,
@@ -239,6 +264,152 @@ class SessionSnapshotTests(unittest.TestCase):
         self.assertEqual(len(self.agents) + 1, len(changed["events"]))
         self.assertEqual("NODE_STATUS_CHANGED", changed["events"][-1]["kind"])
 
+    def test_sequence_floor_controls_the_first_snapshot(self):
+        ledger = ObservationLedger()
+        with mock.patch(
+            "adapters.herdr.session_publisher.publish_snapshot"
+        ) as publish:
+            snapshot = publish_if_changed(
+                self.agents,
+                "wK",
+                "herdr-orchestrator",
+                P1_SESSION,
+                "wK:p1",
+                "http://127.0.0.1:4173/api/snapshots",
+                None,
+                None,
+                ledger=ledger,
+                observed_at="2026-08-07T01:00:00Z",
+                publisher_fingerprint="publisher-sha",
+                sequence_floor=112,
+            )
+
+        self.assertEqual(112, snapshot["sequence"])
+        self.assertEqual("publisher-sha", snapshot["publisherFingerprint"])
+        self.assertEqual([], snapshot["edges"])
+        self.assertGreater(len(snapshot["events"]), 0)
+        publish.assert_called_once()
+
+    def test_restored_history_appends_only_a_real_later_transition(self):
+        prior_ledger = ObservationLedger()
+        prior = build_session_snapshot(
+            self.agents,
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            111,
+            ledger=prior_ledger,
+            observed_at="2026-08-07T00:00:00Z",
+            publisher_fingerprint="old-sha",
+        )
+        restored = ObservationLedger.restore(prior["nodes"], prior["events"])
+        changed_agents = copy.deepcopy(self.agents)
+        changed_agents[1]["agent_status"] = "done"
+
+        with mock.patch("adapters.herdr.session_publisher.publish_snapshot"):
+            restarted = publish_if_changed(
+                self.agents,
+                "wK",
+                "herdr-orchestrator",
+                P1_SESSION,
+                "wK:p1",
+                "http://127.0.0.1:4173/api/snapshots",
+                None,
+                None,
+                ledger=restored,
+                observed_at="2026-08-07T01:00:00Z",
+                publisher_fingerprint="publisher-sha",
+                sequence_floor=112,
+            )
+            changed = publish_if_changed(
+                changed_agents,
+                "wK",
+                "herdr-orchestrator",
+                P1_SESSION,
+                "wK:p1",
+                "http://127.0.0.1:4173/api/snapshots",
+                None,
+                restarted,
+                ledger=restored,
+                observed_at="2026-08-07T01:00:02Z",
+                publisher_fingerprint="publisher-sha",
+                sequence_floor=112,
+            )
+
+        self.assertEqual(prior["events"], restarted["events"])
+        self.assertEqual(len(prior["events"]) + 1, len(changed["events"]))
+        self.assertEqual("observed-000004", changed["events"][-1]["id"])
+        self.assertEqual("NODE_STATUS_CHANGED", changed["events"][-1]["kind"])
+
+    def test_main_restores_legacy_sequence_without_importing_edges(self):
+        legacy = build_session_snapshot(
+            self.agents,
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            111,
+        )
+        legacy["edges"] = [
+            {
+                "id": f"invented-{index}",
+                "source": "orchestrator",
+                "target": legacy["nodes"][1]["id"],
+                "kind": "forward",
+                "status": "active",
+            }
+            for index in range(8)
+        ]
+        argv = [
+            "session_publisher.py",
+            "--workspace-id",
+            "wK",
+            "--space-name",
+            "herdr-orchestrator",
+            "--p1-session-id",
+            P1_SESSION,
+            "--p1-pane-id",
+            "wK:p1",
+            "--endpoint",
+            "http://127.0.0.1:4173/api/snapshots",
+            "--runtime-fingerprint",
+            "publisher-sha",
+            "--sequence-floor",
+            "112",
+        ]
+
+        with mock.patch("sys.argv", argv), mock.patch(
+            "adapters.herdr.session_publisher.load_current_snapshot",
+            return_value=legacy,
+        ) as load, mock.patch(
+            "adapters.herdr.session_publisher.list_agents",
+            return_value=self.agents,
+        ), mock.patch(
+            "adapters.herdr.session_publisher.publish_snapshot"
+        ) as publish, mock.patch(
+            "adapters.herdr.session_publisher.heartbeat_presence"
+        ), mock.patch(
+            "adapters.herdr.session_publisher.time.sleep",
+            side_effect=KeyboardInterrupt,
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                from adapters.herdr.session_publisher import main
+
+                main()
+
+        load.assert_called_once_with(
+            "http://127.0.0.1:4173/api/snapshots",
+            None,
+            "herdr:wK",
+            P1_SESSION,
+        )
+        snapshot = publish.call_args.args[0]
+        self.assertEqual(112, snapshot["sequence"])
+        self.assertEqual("publisher-sha", snapshot["publisherFingerprint"])
+        self.assertEqual([], snapshot["edges"])
+        self.assertGreater(len(snapshot["events"]), 0)
+
     def test_heartbeat_posts_compact_identity_to_presence_endpoint(self):
         response = mock.MagicMock()
         response.__enter__.return_value.status = 202
@@ -287,6 +458,31 @@ class SessionSnapshotTests(unittest.TestCase):
             ]
         )
         self.assertEqual(2.0, args.interval)
+        self.assertEqual("unmanaged", args.runtime_fingerprint)
+        self.assertEqual(1, args.sequence_floor)
+
+    def test_cli_accepts_runtime_fingerprint_and_sequence_floor(self):
+        args = _parser().parse_args(
+            [
+                "--workspace-id",
+                "wK",
+                "--space-name",
+                "herdr-orchestrator",
+                "--p1-session-id",
+                P1_SESSION,
+                "--p1-pane-id",
+                "wK:p1",
+                "--endpoint",
+                "http://127.0.0.1:4173/api/snapshots",
+                "--runtime-fingerprint",
+                "publisher-sha",
+                "--sequence-floor",
+                "112",
+            ]
+        )
+
+        self.assertEqual("publisher-sha", args.runtime_fingerprint)
+        self.assertEqual(112, args.sequence_floor)
 
 
 if __name__ == "__main__":
