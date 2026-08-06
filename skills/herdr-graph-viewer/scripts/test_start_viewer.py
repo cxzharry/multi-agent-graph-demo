@@ -354,6 +354,316 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "ambiguous_stale_server")
 
+    def test_server_selection_prefers_later_current_over_recoverable_stale(self):
+        launcher = self.require_launcher()
+        statuses = {
+            4173: "viewer-stale",
+            4174: "viewer-current",
+            4175: "free",
+        }
+        with mock.patch.object(
+            launcher,
+            "probe_viewer",
+            side_effect=lambda port, _fingerprint: statuses[port],
+        ), mock.patch.object(
+            launcher, "_workspace_panes", return_value=[{"pane_id": "stale"}]
+        ), mock.patch.object(
+            launcher, "_stale_server_pane", return_value="stale"
+        ) as stale_server_pane:
+            selected = launcher._select_server(
+                "w1", Path("/tmp/viewer"), "viewer-current", 4173, 4175
+            )
+
+        self.assertEqual(
+            selected, (4174, launcher.ProcessMatch(None, "reusable"))
+        )
+        stale_server_pane.assert_not_called()
+
+    def test_duplicate_control_publishers_fail_closed(self):
+        launcher = self.require_launcher()
+        target = Path("/tmp/run/workspace-state.json")
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        command = (
+            "python3 -B adapters/herdr/publisher.py "
+            f"--state {target} --synthesize --workspace-id w1 "
+            "--space-name graph-runtime "
+            f"--endpoint {endpoint} --watch "
+            "--runtime-fingerprint publisher-current"
+        )
+
+        def fake_herdr(*args):
+            if args[:2] == ("pane", "list"):
+                return {
+                    "result": {
+                        "panes": [{"pane_id": "publisher-1"}, {"pane_id": "publisher-2"}]
+                    }
+                }
+            if args[:2] == ("pane", "process-info"):
+                return {
+                    "result": {
+                        "process_info": {
+                            "foreground_processes": [{"cmdline": command}]
+                        }
+                    }
+                }
+            raise AssertionError(args)
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            with self.assertRaises(launcher.LauncherError) as raised:
+                launcher._find_publisher(
+                    "w1",
+                    "graph-runtime",
+                    target,
+                    launcher.ManifestSelection("synthetic", None),
+                    endpoint,
+                    "publisher-current",
+                )
+
+        self.assertEqual(raised.exception.code, "ambiguous_publisher")
+
+    def test_duplicate_session_publishers_fail_closed(self):
+        launcher = self.require_launcher()
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        current = (
+            "python3 -B adapters/herdr/session_publisher.py "
+            "--workspace-id w1 --space-name graph-runtime "
+            "--p1-session-id run-1 --p1-pane-id w1:p1 "
+            f"--endpoint {endpoint} --watch "
+            "--runtime-fingerprint publisher-current"
+        )
+        legacy = current.rsplit(" --runtime-fingerprint", 1)[0]
+
+        def fake_herdr(*args):
+            if args[:2] == ("pane", "list"):
+                return {
+                    "result": {
+                        "panes": [{"pane_id": "publisher-1"}, {"pane_id": "publisher-2"}]
+                    }
+                }
+            if args[:2] == ("pane", "process-info"):
+                command = current if args[-1] == "publisher-1" else legacy
+                return {
+                    "result": {
+                        "process_info": {
+                            "foreground_processes": [{"cmdline": command}]
+                        }
+                    }
+                }
+            raise AssertionError(args)
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            with self.assertRaises(launcher.LauncherError) as raised:
+                launcher._find_session_publisher(
+                    "w1",
+                    "graph-runtime",
+                    "run-1",
+                    "w1:p1",
+                    endpoint,
+                    "publisher-current",
+                )
+
+        self.assertEqual(raised.exception.code, "ambiguous_publisher")
+
+    def test_duplicate_control_state_fallback_publishers_fail_closed(self):
+        launcher = self.require_launcher()
+        target = Path("/tmp/run/workspace-state.json")
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        command = (
+            "python3 -B adapters/herdr/publisher.py "
+            f"--state {target} --synthesize --workspace-id w1 "
+            "--space-name old-space "
+            f"--endpoint {endpoint} --watch"
+        )
+
+        def fake_herdr(*args):
+            if args[:2] == ("pane", "list"):
+                return {
+                    "result": {
+                        "panes": [{"pane_id": "publisher-1"}, {"pane_id": "publisher-2"}]
+                    }
+                }
+            if args[:2] == ("pane", "process-info"):
+                return {
+                    "result": {
+                        "process_info": {
+                            "foreground_processes": [{"cmdline": command}]
+                        }
+                    }
+                }
+            raise AssertionError(args)
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            with self.assertRaises(launcher.LauncherError) as raised:
+                launcher._find_publisher_for_state("w1", target, endpoint)
+
+        self.assertEqual(raised.exception.code, "ambiguous_publisher")
+
+    def test_legacy_server_mapping_requires_exact_node_server_command(self):
+        launcher = self.require_launcher()
+        repo = Path("/tmp/current-viewer")
+        panes = [{"pane_id": "server", "label": "graph-viewer-server"}]
+        commands = (
+            "python server.js",
+            "sh -c 'node server.js'",
+            "node tools/server.js",
+            "node other.js server.js",
+            "echo server.js",
+            "node server.js --inspect",
+        )
+
+        for command in commands:
+            with self.subTest(command=command):
+                found = launcher._legacy_server_pane(
+                    "w1",
+                    repo,
+                    panes,
+                    lambda _pane_id: {
+                        "cwd": str(repo),
+                        "foreground_processes": [{"cmdline": command}],
+                    },
+                )
+                self.assertIsNone(found)
+
+        absolute = str((repo / "server.js").resolve())
+        self.assertEqual(
+            launcher._legacy_server_pane(
+                "w1",
+                repo,
+                panes,
+                lambda _pane_id: {
+                    "cwd": str(repo),
+                    "foreground_processes": [
+                        {"cmdline": f"/opt/homebrew/bin/node {absolute}"}
+                    ],
+                },
+            ),
+            "server",
+        )
+
+    def test_stale_server_mapping_reads_cwd_from_foreground_process(self):
+        launcher = self.require_launcher()
+        repo = Path("/tmp/current-viewer")
+        server_script = (repo / "server.js").resolve()
+        panes = [{"pane_id": "server", "label": "graph-viewer-server"}]
+        response = {
+            "result": {
+                "process_info": {
+                    "foreground_processes": [
+                        {
+                            "cwd": str(repo),
+                            "cmdline": (
+                                f"/opt/homebrew/bin/node {server_script} "
+                                "--port 4173 --runtime-fingerprint viewer-old"
+                            ),
+                        }
+                    ]
+                }
+            }
+        }
+        with mock.patch.object(
+            launcher, "probe_viewer", return_value="viewer-stale"
+        ), mock.patch.object(
+            launcher, "_workspace_panes", return_value=panes
+        ), mock.patch.object(
+            launcher, "_herdr", return_value=response
+        ):
+            selected = launcher._select_server(
+                "w1", repo, "viewer-current", 4173, 4173
+            )
+
+        self.assertEqual(
+            selected, (4173, launcher.ProcessMatch("server", "stale"))
+        )
+
+        with mock.patch.object(launcher, "_herdr", return_value=response):
+            self.assertIsNone(
+                launcher._stale_server_pane(
+                    "w1",
+                    repo,
+                    4173,
+                    [{"pane_id": "server", "label": "unrelated"}],
+                )
+            )
+
+    def test_stale_server_mapping_rejects_managed_and_legacy_ambiguity(self):
+        launcher = self.require_launcher()
+        repo = Path("/tmp/current-viewer")
+        server_script = (repo / "server.js").resolve()
+        panes = [
+            {"pane_id": "managed", "label": "graph-viewer-server"},
+            {"pane_id": "legacy", "label": "graph-viewer-server"},
+        ]
+
+        def fake_herdr(*args):
+            pane_id = args[-1]
+            command = (
+                f"node {server_script} --port 4173 "
+                "--runtime-fingerprint viewer-old"
+                if pane_id == "managed"
+                else f"node {server_script}"
+            )
+            return {
+                "result": {
+                    "process_info": {
+                        "foreground_processes": [
+                            {"cwd": str(repo), "cmdline": command}
+                        ]
+                    }
+                }
+            }
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            with self.assertRaises(launcher.LauncherError) as raised:
+                launcher._stale_server_pane("w1", repo, 4173, panes)
+
+        self.assertEqual(raised.exception.code, "ambiguous_stale_server")
+
+    def test_wait_for_shell_accepts_foreground_shell_process(self):
+        launcher = self.require_launcher()
+        response = {
+            "result": {
+                "process_info": {
+                    "shell_pid": 4312,
+                    "foreground_process_group_id": 4312,
+                    "foreground_processes": [
+                        {"pid": 4312, "cmdline": "/bin/zsh"}
+                    ],
+                }
+            }
+        }
+        with mock.patch.object(launcher, "_herdr", return_value=response):
+            launcher._wait_for_shell("server", timeout=0.1)
+
+    def test_wait_for_shell_rejects_transient_or_arbitrary_same_group_processes(self):
+        launcher = self.require_launcher()
+        cases = (
+            [
+                {"pid": 4311, "cmdline": "atuin search"},
+                {"pid": 4312, "cmdline": "/bin/zsh"},
+            ],
+            [{"pid": 4312, "cmdline": "python3 worker.py"}],
+        )
+        for processes in cases:
+            with self.subTest(processes=processes):
+                response = {
+                    "result": {
+                        "process_info": {
+                            "shell_pid": 4312,
+                            "foreground_process_group_id": 4312,
+                            "foreground_processes": processes,
+                        }
+                    }
+                }
+                with mock.patch.object(
+                    launcher, "_herdr", return_value=response
+                ), mock.patch.object(
+                    launcher.time, "monotonic", side_effect=[0.0, 0.0, 1.0]
+                ), mock.patch.object(
+                    launcher.time, "sleep"
+                ), self.assertRaises(launcher.LauncherError) as raised:
+                    launcher._wait_for_shell("server", timeout=0.1)
+                self.assertEqual(raised.exception.code, "process_stop_failed")
+
     def test_stale_runtimes_stop_and_restart_in_existing_panes(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:

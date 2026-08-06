@@ -519,12 +519,39 @@ def _wait_for_shell(pane_id: str, timeout: float = 10.0) -> None:
     while time.monotonic() < deadline:
         response = _herdr("pane", "process-info", "--pane", pane_id)
         info = _result_value(response, "process_info") or {}
-        if isinstance(info, dict) and info.get("foreground_processes") == []:
+        if isinstance(info, dict) and _shell_ready(info):
             return
         time.sleep(0.1)
     raise LauncherError(
         "process_stop_failed", f"Pane {pane_id} did not return to its shell"
     )
+
+
+def _shell_ready(info: dict[str, Any]) -> bool:
+    processes = info.get("foreground_processes")
+    if processes == []:
+        return True
+    shell_pid = info.get("shell_pid")
+    if (
+        not isinstance(processes, list)
+        or len(processes) != 1
+        or isinstance(shell_pid, bool)
+        or not isinstance(shell_pid, int)
+        or shell_pid <= 0
+        or info.get("foreground_process_group_id") != shell_pid
+    ):
+        return False
+    process = processes[0]
+    if not isinstance(process, dict) or process.get("pid") != shell_pid:
+        return False
+    command = process.get("cmdline")
+    if not isinstance(command, str):
+        return False
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return False
+    return bool(argv) and Path(argv[0]).name == "zsh"
 
 
 def _snapshot(port: int, scope_id: str, run_id: str) -> dict[str, Any] | None:
@@ -608,13 +635,8 @@ def _legacy_server_pane(
         foreground = info.get("foreground_processes")
         if not isinstance(foreground, list):
             continue
-        cwd = info.get("cwd")
-        if cwd != str(repo):
-            continue
         if any(
-            isinstance(process, dict)
-            and isinstance(process.get("cmdline"), str)
-            and "server.js" in shlex.split(process["cmdline"])
+            _legacy_server_process_matches(process, repo, info.get("cwd"))
             for process in foreground
         ):
             candidates.append(pane_id)
@@ -624,6 +646,40 @@ def _legacy_server_pane(
             f"Multiple legacy graph-viewer-server panes in workspace {workspace_id}",
         )
     return candidates[0] if candidates else None
+
+
+def _legacy_server_process_matches(
+    process: Any, repo: Path, fallback_cwd: Any
+) -> bool:
+    argv = _server_process_argv(process, repo, fallback_cwd)
+    return argv is not None and len(argv) == 2
+
+
+def _server_process_argv(
+    process: Any, repo: Path, fallback_cwd: Any = None
+) -> list[str] | None:
+    if not isinstance(process, dict):
+        return None
+    command = process.get("cmdline")
+    cwd = process.get("cwd", fallback_cwd)
+    if not isinstance(command, str) or not isinstance(cwd, str):
+        return None
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if len(argv) < 2 or Path(argv[0]).name != "node":
+        return None
+    process_cwd = Path(cwd).resolve()
+    if process_cwd != repo.resolve():
+        return None
+    script = Path(argv[1])
+    resolved_script = (
+        script.resolve() if script.is_absolute() else (process_cwd / script).resolve()
+    )
+    if resolved_script != (repo / "server.js").resolve():
+        return None
+    return argv
 
 
 def _pane_process_info(pane_id: str) -> dict[str, Any]:
@@ -639,17 +695,20 @@ def _stale_server_pane(
     managed: list[str] = []
     for pane in panes:
         pane_id = pane.get("pane_id")
-        if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
+        if (
+            not isinstance(pane_id, str)
+            or isinstance(pane.get("agent"), str)
+            or pane.get("label") != "graph-viewer-server"
+        ):
             continue
         info = _pane_process_info(pane_id)
         process_infos[pane_id] = info
-        if info.get("cwd") != str(repo):
+        foreground = info.get("foreground_processes")
+        if not isinstance(foreground, list):
             continue
-        for argv in _publisher_argvs(info):
-            if (
-                _argv_value(argv, "--port") == str(port)
-                and ("server.js" in argv or "npm" in argv and "server" in argv)
-            ):
+        for process in foreground:
+            argv = _server_process_argv(process, repo, info.get("cwd"))
+            if argv is not None and _argv_value(argv, "--port") == str(port):
                 managed.append(pane_id)
                 break
     if len(managed) > 1:
@@ -657,14 +716,21 @@ def _stale_server_pane(
             "ambiguous_stale_server",
             f"Multiple graph-viewer-server panes in workspace {workspace_id} for port {port}",
         )
-    if managed:
-        return managed[0]
-    return _legacy_server_pane(
+    legacy = _legacy_server_pane(
         workspace_id,
         repo,
         panes,
-        lambda pane_id: process_infos.get(pane_id) or _pane_process_info(pane_id),
+        lambda pane_id: process_infos.get(pane_id, {}),
     )
+    candidates = set(managed)
+    if legacy is not None:
+        candidates.add(legacy)
+    if len(candidates) > 1:
+        raise LauncherError(
+            "ambiguous_stale_server",
+            f"Multiple graph-viewer-server panes in workspace {workspace_id} for port {port}",
+        )
+    return next(iter(candidates)) if candidates else None
 
 
 def _select_server(
@@ -675,19 +741,21 @@ def _select_server(
     port_end: int,
 ) -> tuple[int, ProcessMatch]:
     first_free: int | None = None
-    panes: list[dict[str, Any]] | None = None
+    stale_ports: list[int] = []
     for port in range(port_start, port_end + 1):
         status = probe_viewer(port, expected_runtime_fingerprint)
         if status == "viewer-current":
             return port, ProcessMatch(None, "reusable")
         if status == "viewer-stale":
-            if panes is None:
-                panes = _workspace_panes(workspace_id)
+            stale_ports.append(port)
+        elif status == "free" and first_free is None:
+            first_free = port
+    if stale_ports:
+        panes = _workspace_panes(workspace_id)
+        for port in stale_ports:
             pane_id = _stale_server_pane(workspace_id, repo, port, panes)
             if pane_id is not None:
                 return port, ProcessMatch(pane_id, "stale")
-        elif status == "free" and first_free is None:
-            first_free = port
     if first_free is not None:
         return first_free, ProcessMatch(None, "missing")
     raise LauncherError(
@@ -707,7 +775,7 @@ def _find_publisher(
 ) -> ProcessMatch:
     for _ in range(2):
         stale_seen = False
-        stale_pane: str | None = None
+        matches: dict[str, str] = {}
         for pane in _workspace_panes(workspace_id):
             pane_id = pane.get("pane_id")
             if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
@@ -735,11 +803,12 @@ def _find_publisher(
                 expected_runtime_fingerprint,
             )
             if match.status == "reusable":
-                return ProcessMatch(pane_id, "reusable")
-            if match.status == "stale":
-                stale_pane = pane_id
-        if stale_pane is not None:
-            return ProcessMatch(stale_pane, "stale")
+                matches[pane_id] = "reusable"
+            elif match.status == "stale":
+                matches[pane_id] = "stale"
+        found = _unique_publisher_match(workspace_id, matches)
+        if found.status != "missing":
+            return found
         if not stale_seen:
             break
     return ProcessMatch(None, "missing")
@@ -748,6 +817,7 @@ def _find_publisher(
 def _find_publisher_for_state(
     workspace_id: str, state_path: Path, endpoint: str
 ) -> ProcessMatch:
+    matches: dict[str, str] = {}
     for pane in _workspace_panes(workspace_id):
         pane_id = pane.get("pane_id")
         if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
@@ -764,8 +834,8 @@ def _find_publisher_for_state(
         if isinstance(info, dict) and _publisher_matches_state(
             info, str(state_path), workspace_id, endpoint, True
         ):
-            return ProcessMatch(pane_id, "stale")
-    return ProcessMatch(None, "missing")
+            matches[pane_id] = "stale"
+    return _unique_publisher_match(workspace_id, matches)
 
 
 def _find_session_publisher(
@@ -776,7 +846,7 @@ def _find_session_publisher(
     endpoint: str,
     expected_runtime_fingerprint: str,
 ) -> ProcessMatch:
-    stale_pane: str | None = None
+    matches: dict[str, str] = {}
     for pane in _workspace_panes(workspace_id):
         pane_id = pane.get("pane_id")
         if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
@@ -802,10 +872,24 @@ def _find_session_publisher(
                 expected_runtime_fingerprint,
             )
             if match.status == "reusable":
-                return ProcessMatch(pane_id, "reusable")
-            if match.status == "stale":
-                stale_pane = pane_id
-    return ProcessMatch(stale_pane, "stale" if stale_pane else "missing")
+                matches[pane_id] = "reusable"
+            elif match.status == "stale":
+                matches[pane_id] = "stale"
+    return _unique_publisher_match(workspace_id, matches)
+
+
+def _unique_publisher_match(
+    workspace_id: str, matches: dict[str, str]
+) -> ProcessMatch:
+    if len(matches) > 1:
+        raise LauncherError(
+            "ambiguous_publisher",
+            f"Multiple exact publisher panes in workspace {workspace_id}",
+        )
+    if not matches:
+        return ProcessMatch(None, "missing")
+    pane_id, status = next(iter(matches.items()))
+    return ProcessMatch(pane_id, status)
 
 
 def _manifest_object(value: Any, path: str) -> dict[str, Any]:
