@@ -1,4 +1,4 @@
-import {useEffect, useMemo} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {
   Background,
@@ -39,6 +39,34 @@ function SyncNodeInternals({nodes}: {nodes: RoleFlowNode[]}) {
   return null;
 }
 
+type ResponsiveGraphMode = 'desktop' | 'tablet' | 'mobile';
+
+function useResponsiveGraphMode(): ResponsiveGraphMode {
+  const tabletQuery = '(max-width: 1100px)';
+  const mobileQuery = '(max-width: 620px)';
+  const currentMode = (): ResponsiveGraphMode =>
+    window.matchMedia(mobileQuery).matches
+      ? 'mobile'
+      : window.matchMedia(tabletQuery).matches
+        ? 'tablet'
+        : 'desktop';
+  const [mode, setMode] = useState(currentMode);
+
+  useEffect(() => {
+    const tablet = window.matchMedia(tabletQuery);
+    const mobile = window.matchMedia(mobileQuery);
+    const update = () => setMode(currentMode());
+    tablet.addEventListener('change', update);
+    mobile.addEventListener('change', update);
+    return () => {
+      tablet.removeEventListener('change', update);
+      mobile.removeEventListener('change', update);
+    };
+  }, []);
+
+  return mode;
+}
+
 function App() {
   const {
     graphs,
@@ -53,10 +81,58 @@ function App() {
     () => layoutRoleGraph(snapshot?.nodes ?? [], snapshot?.edges ?? []),
     [snapshot],
   );
+  const responsiveGraphMode = useResponsiveGraphMode();
+  const positionedNodes = useMemo(() => {
+    if (responsiveGraphMode === 'desktop') return layout.positionedNodes;
+
+    const groups = new Map<number, typeof layout.positionedNodes>();
+    for (const node of layout.positionedNodes) {
+      const group = groups.get(node.position.y) ?? [];
+      group.push(node);
+      groups.set(node.position.y, group);
+    }
+    const rows = [...groups.entries()].sort(([left], [right]) => left - right);
+    if (responsiveGraphMode === 'tablet') {
+      const rowWidth = 944;
+      return rows.flatMap(([y, group]) => {
+        const sorted = [...group].sort(
+          (left, right) =>
+            left.position.x - right.position.x ||
+            left.id.localeCompare(right.id),
+        );
+        const groupWidth = sorted.length * 280 + (sorted.length - 1) * 52;
+        const left = (rowWidth - groupWidth) / 2;
+        return sorted.map((node, index) => ({
+          ...node,
+          position: {x: left + index * 332, y},
+        }));
+      });
+    }
+
+    let stageY = 0;
+    return rows.flatMap(([, group]) => {
+      const sorted = [...group].sort(
+        (left, right) =>
+          left.position.x - right.position.x || left.id.localeCompare(right.id),
+      );
+      const stage = sorted.map((node, index) => {
+        const row = Math.floor(index / 2);
+        const itemsInRow = Math.min(2, sorted.length - row * 2);
+        const rowWidth = itemsInRow * 140 + (itemsInRow - 1) * 20;
+        const left = (300 - rowWidth) / 2;
+        return {
+          ...node,
+          position: {x: left + (index % 2) * 160, y: stageY + row * 256},
+        };
+      });
+      stageY += Math.ceil(sorted.length / 2) * 256;
+      return stage;
+    });
+  }, [layout.positionedNodes, responsiveGraphMode]);
 
   const nodes = useMemo<RoleFlowNode[]>(
     () =>
-      layout.positionedNodes.map(node => ({
+      positionedNodes.map(node => ({
         id: node.id,
         type: 'role',
         position: node.position,
@@ -67,7 +143,7 @@ function App() {
         draggable: false,
         selectable: false,
       })),
-    [layout.positionedNodes, snapshot?.flowId],
+    [positionedNodes, snapshot?.flowId],
   );
   const initialFitView = useMemo<FitViewOptions<RoleFlowNode>>(() => {
     const rows = [...new Set(nodes.map(node => node.position.y))].sort(
@@ -75,16 +151,21 @@ function App() {
     );
     if (rows.length <= 4) return {padding: 0.24, maxZoom: 1.05};
 
-    const topRows = new Set(rows.slice(0, 2));
     return {
-      nodes: nodes
-        .filter(node => topRows.has(node.position.y))
-        .map(node => ({id: node.id})),
-      padding: 0.08,
-      minZoom: 0.9,
+      padding: 0.06,
+      minZoom: 0.85,
       maxZoom: 1.05,
     };
   }, [nodes]);
+  const graphPanelHeight = useMemo(() => {
+    const rows = new Set(nodes.map(node => node.position.y));
+    if (rows.size <= 4) return 720;
+    const nodeHeight = responsiveGraphMode === 'mobile' ? 188 : 148;
+    const graphBottom = Math.max(
+      ...nodes.map(node => node.position.y + nodeHeight),
+    );
+    return Math.max(720, graphBottom + 120);
+  }, [nodes, responsiveGraphMode]);
   const edges = useMemo<Edge[]>(() => {
     const forwardEdges: Edge[] = layout.forwardEdges.map(edge => ({
       id: edge.id,
@@ -112,12 +193,22 @@ function App() {
         color: '#ef6a4c',
       },
       data: {
-        feedbackGutterX: layout.feedbackGutterX,
+        feedbackGutterX:
+          responsiveGraphMode === 'mobile'
+            ? 316
+            : responsiveGraphMode === 'tablet'
+              ? 960
+              : layout.feedbackGutterX,
         reason: route.reason,
       },
     };
     return [...forwardEdges, feedbackEdge];
-  }, [layout.feedbackGutterX, layout.forwardEdges, snapshot]);
+  }, [
+    layout.feedbackGutterX,
+    layout.forwardEdges,
+    responsiveGraphMode,
+    snapshot,
+  ]);
 
   const selectedValue = selection ? selectionQuery(selection) : '';
   const observedTopology =
@@ -198,7 +289,11 @@ function App() {
       {error && <div className="error-banner">{error}</div>}
 
       <section className="viewer-layout">
-        <div className="graph-panel" aria-label="Live role graph canvas">
+        <div
+          className="graph-panel"
+          aria-label="Live role graph canvas"
+          style={{height: graphPanelHeight}}
+        >
           {snapshot ? (
             <>
               <div className="graph-meta">
@@ -221,7 +316,7 @@ function App() {
                 </div>
               )}
               <ReactFlow
-                key={`${snapshot.scopeId}\u001f${snapshot.runId}`}
+                key={`${snapshot.scopeId}\u001f${snapshot.runId}\u001f${responsiveGraphMode}`}
                 nodes={nodes}
                 edges={edges}
                 nodeTypes={nodeTypes}

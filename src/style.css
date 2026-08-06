@@ -32,6 +32,8 @@ select {
 }
 
 .viewer-shell {
+  width: 100%;
+  min-width: 0;
   min-height: 100vh;
   padding: 24px;
   background:
@@ -155,10 +157,12 @@ select {
 
 .viewer-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  width: 100%;
+  min-width: 0;
+  min-height: 720px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
   gap: 16px;
   max-width: 1680px;
-  height: 720px;
   margin: 0 auto;
 }
 
@@ -261,8 +265,10 @@ select {
 
 .timeline-panel {
   display: flex;
+  min-width: 0;
   min-height: 0;
   padding: 18px;
+  overflow: hidden;
   flex-direction: column;
 }
 
@@ -323,16 +329,23 @@ select {
 }
 
 .timeline-list {
+  min-width: 0;
   min-height: 0;
   margin-top: 14px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .timeline-item {
   display: grid;
-  grid-template-columns: 16px 1fr;
+  min-width: 0;
+  grid-template-columns: 16px minmax(0, 1fr);
   gap: 8px;
   min-height: 58px;
+}
+
+.timeline-item > div:last-child {
+  min-width: 0;
 }
 
 .timeline-rail {
@@ -370,12 +383,16 @@ select {
   color: #d9dee6;
   font-size: 12px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .timeline-item small {
+  display: block;
+  max-width: 100%;
   color: #6f7b8a;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9px;
+  overflow-wrap: anywhere;
 }
 
 .timeline-empty {
@@ -390,6 +407,7 @@ select {
   border-top: 1px solid #252d37;
   color: #667180;
   font-size: 10px;
+  overflow-wrap: anywhere;
 }
 
 .role-node {
@@ -424,7 +442,7 @@ select {
   margin: 0;
   overflow: hidden;
   color: #f0f2f6;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
@@ -448,7 +466,7 @@ select {
   color: #c4ccd6;
   background: #20262e;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -478,7 +496,7 @@ select {
   padding-top: 9px;
   border-top: 1px solid #29313b;
   color: #8d99a8;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -604,7 +622,7 @@ select {
   fill: currentColor;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1100px) {
   .viewer-header {
     align-items: stretch;
     flex-direction: column;
@@ -648,5 +666,41 @@ select {
 
   .graph-panel {
     height: 600px;
+  }
+
+  .role-node {
+    width: 140px;
+    height: 188px;
+    padding: 10px;
+  }
+
+  .role-node-heading {
+    grid-template-columns: 8px minmax(0, 1fr);
+  }
+
+  .role-node h3 {
+    display: -webkit-box;
+    font-size: 14px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .assignee-chip {
+    grid-column: 2;
+    justify-self: end;
+    max-width: 40px;
+    padding: 3px 5px;
+  }
+
+  .role-task {
+    margin: 10px 0 8px;
+  }
+
+  .role-node-no-task .role-status {
+    margin-top: 80px;
   }
 }

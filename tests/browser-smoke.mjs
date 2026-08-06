@@ -109,6 +109,72 @@ async function viewportReadability(page, nodeId) {
   }, nodeId);
 }
 
+async function responsiveVisualMetrics(page) {
+  return page.evaluate(() => {
+    const graphPanel = required('.graph-panel');
+    const canvas = required('.react-flow');
+    const viewport = required('.react-flow__viewport');
+    const timelinePanel = required('.timeline-panel');
+    const transform = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+    const scale = Math.abs(transform.a);
+    const bounds = element => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+      };
+    };
+    const nodes = [...document.querySelectorAll('[data-testid="role-node"]')];
+    const timelineRows = [...document.querySelectorAll('.timeline-item')];
+
+    return {
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      bodyWidth: document.body.scrollWidth,
+      graphPanel: bounds(graphPanel),
+      canvas: bounds(canvas),
+      timelinePanel: bounds(timelinePanel),
+      nodeBounds: nodes.map(node => bounds(node)),
+      nodePositions: Object.fromEntries(
+        nodes.map(node => [node.getAttribute('data-node-id'), bounds(node)]),
+      ),
+      roleTitleSizes: nodes.map(node => {
+        const title = required('h3', node);
+        return Number.parseFloat(getComputedStyle(title).fontSize) * scale;
+      }),
+      roleTitlesContained: nodes.every(node => {
+        const title = required('h3', node);
+        return (
+          title.scrollWidth <= title.clientWidth + 1 &&
+          title.scrollHeight <= title.clientHeight + 1
+        );
+      }),
+      assigneeSizes: nodes.map(node => {
+        const assignee = required('.assignee-chip', node);
+        return Number.parseFloat(getComputedStyle(assignee).fontSize) * scale;
+      }),
+      timelineRowsContained: timelineRows.every(row => {
+        const content = required(':scope > div:last-child', row);
+        const metadata = required('small', row);
+        return (
+          content.scrollWidth <= content.clientWidth + 1 &&
+          metadata.scrollWidth <= metadata.clientWidth + 1 &&
+          bounds(metadata).right <= bounds(timelinePanel).right + 1
+        );
+      }),
+    };
+
+    function required(selector, root = document) {
+      const element = root.querySelector(selector);
+      if (!(element instanceof Element)) throw new Error(`Missing ${selector}`);
+      return element;
+    }
+  });
+}
+
 async function statusVisualState(page) {
   return page.evaluate(() => {
     const statusOrder = [
@@ -629,6 +695,123 @@ try {
       ),
   );
 
+  await mkdir(artifactsDirectory, {recursive: true});
+  for (const viewport of [
+    {width: 1440, height: 1000},
+    {width: 1024, height: 900},
+    {width: 390, height: 844},
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(
+      `${baseUrl}/?${new URLSearchParams({
+        scopeId: branched.scopeId,
+        runId: branched.runId,
+      }).toString()}`,
+    );
+    await waitForNodeCount(page, branched.nodes.length);
+    await page.evaluate(
+      () =>
+        new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+
+    const metrics = await responsiveVisualMetrics(page);
+    const size = `${viewport.width}x${viewport.height}`;
+    assert.ok(
+      metrics.documentWidth <= metrics.viewportWidth &&
+        metrics.bodyWidth <= metrics.viewportWidth,
+      `${size} page width must not overflow (${metrics.documentWidth}/${metrics.bodyWidth} > ${metrics.viewportWidth})`,
+    );
+    assert.ok(
+      metrics.graphPanel.left >= 0 &&
+        metrics.graphPanel.right <= metrics.viewportWidth + 1 &&
+        metrics.canvas.left >= metrics.graphPanel.left - 1 &&
+        metrics.canvas.right <= metrics.graphPanel.right + 1,
+      `${size} graph panel and canvas must stay within the viewport`,
+    );
+    assert.ok(
+      metrics.nodeBounds.every(
+        node =>
+          node.left >= metrics.graphPanel.left - 1 &&
+          node.right <= metrics.graphPanel.right + 1 &&
+          node.bottom <= metrics.graphPanel.bottom + 1,
+      ),
+      `${size} graph nodes must remain fully inside the initial graph panel`,
+    );
+    assert.ok(
+      metrics.roleTitleSizes.every(size => size >= 12) &&
+        metrics.roleTitlesContained,
+      `${size} role labels must remain fully visible at 12px or larger effective size`,
+    );
+    assert.ok(
+      metrics.assigneeSizes.every(size => size >= 8),
+      `${size} P labels must remain at least 8px effective size`,
+    );
+    assert.ok(
+      metrics.timelinePanel.left >= 0 &&
+        metrics.timelinePanel.right <= metrics.viewportWidth + 1 &&
+        metrics.timelineRowsContained,
+      `${size} timeline rows and timestamps must stay within the timeline panel`,
+    );
+    assert.equal(
+      await page.locator('.forward-edge').count(),
+      branched.edges.filter(edge => edge.kind === 'forward').length,
+      `${size} must preserve every authored forward relationship`,
+    );
+    if (viewport.width === 1024) {
+      const implementationTops = [
+        metrics.nodePositions['implementation-a'].top,
+        metrics.nodePositions['implementation-b'].top,
+        metrics.nodePositions['implementation-c'].top,
+      ];
+      assert.ok(
+        implementationTops.every(top => Math.abs(top - implementationTops[0]) < 1),
+        `${size} must keep the authored parallel implementation branch on one row`,
+      );
+    }
+    if (viewport.width === 390) {
+      const implementationTops = [
+        metrics.nodePositions['implementation-a'].top,
+        metrics.nodePositions['implementation-b'].top,
+        metrics.nodePositions['implementation-c'].top,
+      ];
+      assert.ok(
+        implementationTops.some(
+          (top, index) =>
+            implementationTops.some(
+              (other, otherIndex) =>
+                index !== otherIndex && Math.abs(top - other) < 1,
+            ),
+        ),
+        `${size} must retain a visible parallel branch instead of a single chain`,
+      );
+    }
+    const responsiveScreenshotPath = path.join(
+      artifactsDirectory,
+      `live-role-graph-${size}.png`,
+    );
+    await page.screenshot({path: responsiveScreenshotPath, fullPage: true});
+    console.log(
+      `${size} DOM passed (${metrics.documentWidth}px document, ${metrics.nodeBounds.length} nodes). Screenshot: ${responsiveScreenshotPath}`,
+    );
+  }
+
+  await page.setViewportSize({width: 1440, height: 1000});
+  await page.goto(
+    `${baseUrl}/?${new URLSearchParams({
+      scopeId: branched.scopeId,
+      runId: branched.runId,
+    }).toString()}`,
+  );
+  await waitForNodeCount(page, branched.nodes.length);
+  await page.evaluate(
+    () =>
+      new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+
   const readability = await viewportReadability(page, 'orchestration');
   console.log(`Initial 11-role React Flow scale: ${readability.scale.toFixed(3)}`);
   assert.ok(
@@ -776,7 +959,6 @@ try {
     ),
   );
 
-  await mkdir(artifactsDirectory, {recursive: true});
   await page.screenshot({path: screenshotPath, fullPage: true});
   console.log(`Browser smoke passed. Screenshot: ${screenshotPath}`);
 } catch (error) {
