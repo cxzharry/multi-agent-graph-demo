@@ -139,7 +139,13 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
         self.assertIsNotNone(self.launcher, "start_viewer.py is missing")
         return self.launcher
 
-    def launch_runtime_matches(self, server_status: str, publisher_status: str):
+    def launch_runtime_matches(
+        self,
+        server_status: str,
+        publisher_status: str,
+        *,
+        degraded: bool = False,
+    ):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -147,6 +153,19 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
             RuntimeFingerprintTest().write_runtime_tree(repo)
             publisher_fingerprint = launcher.publisher_runtime_fingerprint(repo)
             events: list[tuple[str, ...]] = []
+            readiness = []
+            if degraded:
+                readiness.append(
+                    launcher.LauncherError(
+                        "publisher_start_failed", "missing current snapshot"
+                    )
+                )
+            readiness.append(
+                {
+                    "sequence": 112,
+                    "publisherFingerprint": publisher_fingerprint,
+                }
+            )
 
             def fake_herdr(*args):
                 self.assertEqual(args[:2], ("pane", "send-keys"))
@@ -209,10 +228,7 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
             ), mock.patch.object(
                 launcher,
                 "_wait_for_snapshot",
-                return_value={
-                    "sequence": 112,
-                    "publisherFingerprint": publisher_fingerprint,
-                },
+                side_effect=readiness,
             ), mock.patch.object(
                 launcher,
                 "_split_pane",
@@ -938,6 +954,26 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
         self.assertFalse(result["server"]["replaced"])
         self.assertTrue(result["publisher"]["reused"])
         self.assertFalse(result["publisher"]["replaced"])
+        self.assertEqual(result["publisher"]["pane_id"], "publisher")
+
+    def test_degraded_current_runtimes_cycle_only_publisher_and_recheck(self):
+        launcher = self.require_launcher()
+        try:
+            result, events = self.launch_runtime_matches(
+                "reusable", "reusable", degraded=True
+            )
+        except launcher.LauncherError as error:
+            self.fail(f"degraded current runtimes did not self-heal: {error.code}")
+
+        self.assertEqual(
+            [(event[0], event[1]) for event in events],
+            [("stop", "publisher"), ("run", "publisher")],
+        )
+        self.assertIn("--sequence-floor 112", events[-1][2])
+        self.assertTrue(result["server"]["reused"])
+        self.assertFalse(result["server"]["replaced"])
+        self.assertFalse(result["publisher"]["reused"])
+        self.assertTrue(result["publisher"]["replaced"])
         self.assertEqual(result["publisher"]["pane_id"], "publisher")
 
     def test_wait_for_shell_is_bounded(self):

@@ -1223,6 +1223,28 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             or (revision is not None and prior_sequence == revision)
         )
 
+        snapshot = None
+        if (
+            session_mode
+            and server_reused
+            and publisher_reused
+            and publisher_pane is not None
+        ):
+            try:
+                snapshot = _wait_for_snapshot(
+                    port,
+                    scope_id,
+                    run_id,
+                    revision,
+                    space_name,
+                    expected_publisher_fingerprint=publisher_fingerprint,
+                )
+            except LauncherError as error:
+                if error.code != "publisher_start_failed":
+                    raise
+                publisher_reused = False
+                publisher_replaced = True
+
         if publisher_replaced:
             assert publisher_pane is not None
             _herdr("pane", "send-keys", publisher_pane, "ctrl+c")
@@ -1327,19 +1349,22 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             )
             _run_in_pane(publisher_pane, command)
 
-        snapshot = _wait_for_snapshot(
-            port,
-            scope_id,
-            run_id,
-            revision,
-            space_name,
-            expected_publisher_fingerprint=publisher_fingerprint,
-            minimum_sequence_exclusive=(
-                prior_sequence
-                if session_mode and not publisher_reused and prior_sequence is not None
-                else None
-            ),
-        )
+        if snapshot is None:
+            snapshot = _wait_for_snapshot(
+                port,
+                scope_id,
+                run_id,
+                revision,
+                space_name,
+                expected_publisher_fingerprint=publisher_fingerprint,
+                minimum_sequence_exclusive=(
+                    prior_sequence
+                    if session_mode
+                    and not publisher_reused
+                    and prior_sequence is not None
+                    else None
+                ),
+            )
     return {
         "status": "ready",
         "workspace_id": workspace_id,
