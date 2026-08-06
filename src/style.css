@@ -723,8 +723,12 @@ select {
   .assignee-chip {
     grid-column: 2;
     justify-self: end;
-    max-width: 40px;
+    max-width: 76px;
     padding: 3px 5px;
+  }
+
+  .assignee-chip-non-position {
+    width: 76px;
   }
 
   .role-task {

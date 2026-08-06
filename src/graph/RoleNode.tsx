@@ -34,7 +34,7 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
           <p>Generation {data.generation}</p>
         </div>
         <span
-          className="assignee-chip"
+          className={`assignee-chip${/^P[1-9]$/.test(assigneeLabel) ? '' : ' assignee-chip-non-position'}`}
           aria-label={`Assignee ${data.assignee}`}
           title={data.assignee}
         >

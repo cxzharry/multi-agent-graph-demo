@@ -420,6 +420,35 @@ try {
     edges: [],
     events: [],
   };
+  const mobileAssigneeFit = {
+    ...structuredClone(persona),
+    flowId: 'auto-operational',
+    scopeId: 'herdr:wK',
+    runId: 'mobile-assignee-fit',
+    title: 'Mobile assignee fit',
+    nodes: [
+      {
+        id: 'mobile-p1',
+        role: 'Orchestrator',
+        assignee: 'codex',
+        layer: 0,
+        status: 'running',
+        task: 'Coordinate the current session',
+        generation: 1,
+      },
+      {
+        id: 'mobile-review',
+        role: 'Independent Review',
+        assignee: 'Unassigned',
+        layer: 1,
+        status: 'pending',
+        task: 'Review the integrated candidate',
+        generation: 1,
+      },
+    ],
+    edges: [],
+    events: [],
+  };
   const selectorLayout = {
     ...structuredClone(compact),
     spaceName: 'herdr-orchestrator',
@@ -536,6 +565,7 @@ try {
   await postSnapshot(baseUrl, activeHerdr);
   await postSnapshot(baseUrl, customPersona);
   await postSnapshot(baseUrl, persona);
+  await postSnapshot(baseUrl, mobileAssigneeFit);
   await postSnapshot(baseUrl, selectorLayout);
   await postSnapshot(baseUrl, historyHardening);
   for (const collision of selectorCollisions) await postSnapshot(baseUrl, collision);
@@ -770,6 +800,84 @@ try {
     `All timestamp forms must render as ${recentClockLabel}: ${personaTimelineMeta.join(', ')}`,
   );
   await page.locator('.snapshot-time').getByText(recentClockLabel).waitFor();
+
+  await page.setViewportSize({width: 390, height: 844});
+  await page.goto(
+    `${baseUrl}/?${new URLSearchParams({
+      scopeId: mobileAssigneeFit.scopeId,
+      runId: mobileAssigneeFit.runId,
+    }).toString()}`,
+  );
+  await waitForNodeCount(page, mobileAssigneeFit.nodes.length);
+  const mobileAssigneeMetrics = await page
+    .locator('[data-testid="role-node"]')
+    .evaluateAll(nodes =>
+      nodes.map(node => {
+        const assignee = node.querySelector('.assignee-chip');
+        const title = node.querySelector('h3');
+        if (!(assignee instanceof HTMLElement) || !(title instanceof HTMLElement)) {
+          throw new Error('Missing mobile assignee or role title');
+        }
+        const styles = getComputedStyle(assignee);
+        const context = document.createElement('canvas').getContext('2d');
+        if (!context) throw new Error('Missing mobile text measurement context');
+        context.font = styles.font;
+        const nodeBounds = node.getBoundingClientRect();
+        const assigneeBounds = assignee.getBoundingClientRect();
+        const label = assignee.textContent?.trim() ?? '';
+        return {
+          label,
+          className: assignee.className,
+          width: styles.width,
+          maxWidth: styles.maxWidth,
+          scrollWidth: assignee.scrollWidth,
+          clientWidth: assignee.clientWidth,
+          textWidth: context.measureText(label).width,
+          contentWidth:
+            assignee.clientWidth -
+            Number.parseFloat(styles.paddingLeft) -
+            Number.parseFloat(styles.paddingRight),
+          insideNode:
+            assigneeBounds.left >= nodeBounds.left &&
+            assigneeBounds.right <= nodeBounds.right,
+          titleContained:
+            title.scrollWidth <= title.clientWidth &&
+            title.scrollHeight <= title.clientHeight,
+        };
+      }),
+    );
+  await mkdir(artifactsDirectory, {recursive: true});
+  const mobileAssigneeScreenshotPath = path.join(
+    artifactsDirectory,
+    'mobile-assignee-fit-390x844.png',
+  );
+  await page.screenshot({path: mobileAssigneeScreenshotPath, fullPage: true});
+  assert.deepEqual(
+    mobileAssigneeMetrics.map(metric => metric.label),
+    ['codex', 'Unassigned'],
+  );
+  assert.ok(
+    mobileAssigneeMetrics.every(
+      metric =>
+        metric.className.includes('assignee-chip-non-position') &&
+        metric.width === '76px' &&
+        metric.maxWidth === '76px',
+    ),
+    `390x844 non-position assignees must use the bounded chip class: ${JSON.stringify(mobileAssigneeMetrics)}`,
+  );
+  assert.ok(
+    mobileAssigneeMetrics.every(
+      metric =>
+        metric.scrollWidth <= metric.clientWidth &&
+        metric.textWidth <= metric.contentWidth &&
+        metric.insideNode &&
+        metric.titleContained,
+    ),
+    `390x844 assignees and role titles must visibly fit: ${JSON.stringify(mobileAssigneeMetrics)}`,
+  );
+  console.log(
+    `390x844 mobile assignee DOM passed: ${JSON.stringify(mobileAssigneeMetrics)}`,
+  );
 
   for (const viewport of [
     {width: 1440, height: 1000},
