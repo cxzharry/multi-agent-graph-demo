@@ -162,6 +162,9 @@ export function validateSnapshot(value) {
   requireString(value.runId, 'runId');
   if (value.spaceName !== undefined) requireString(value.spaceName, 'spaceName');
   if (value.shortName !== undefined) requireString(value.shortName, 'shortName');
+  if (value.publisherFingerprint !== undefined) {
+    requireString(value.publisherFingerprint, 'publisherFingerprint');
+  }
   requireInteger(value.sequence, 'sequence');
   requireTimestamp(value.generatedAt, 'generatedAt');
   requireString(value.title, 'title');

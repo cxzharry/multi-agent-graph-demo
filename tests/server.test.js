@@ -164,11 +164,49 @@ describe('role graph server', () => {
     await rm(directory, {recursive: true, force: true});
   });
 
-  test('accepts and persists a valid snapshot', async () => {
+  test('accepts and persists a snapshot without a publisher fingerprint', async () => {
     const response = await post(baseUrl, snapshot());
 
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual(snapshot());
+  });
+
+  test('accepts and persists a non-empty publisher fingerprint', async () => {
+    const input = snapshot();
+    input.publisherFingerprint = 'publisher-sha';
+
+    const response = await post(baseUrl, input);
+    const persisted = await fetch(
+      `${baseUrl}/api/snapshot?scopeId=scope-a&runId=run-1`,
+    );
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual(input);
+    expect(await persisted.json()).toEqual(input);
+  });
+
+  test('rejects an empty publisher fingerprint', async () => {
+    const input = snapshot();
+    input.publisherFingerprint = '';
+
+    const response = await post(baseUrl, input);
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(
+      /publisherFingerprint must be a non-empty string/,
+    );
+  });
+
+  test('rejects a non-string publisher fingerprint', async () => {
+    const input = snapshot();
+    input.publisherFingerprint = 42;
+
+    const response = await post(baseUrl, input);
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(
+      /publisherFingerprint must be a non-empty string/,
+    );
   });
 
   test('returns a stable viewer health identity', async () => {
