@@ -246,7 +246,7 @@ class RestorationTests(unittest.TestCase):
         self.assertEqual("observed-000001", events[0]["id"])
         self.assertEqual("NODE_OBSERVED", events[0]["kind"])
 
-    def test_invalid_observed_history_creates_a_fresh_ledger(self):
+    def test_invalid_observed_ids_fail_closed(self):
         nodes = [node("orchestrator", status="pending", assignee="P1")]
         invalid_histories = (
             ["not-an-event"],
@@ -257,12 +257,49 @@ class RestorationTests(unittest.TestCase):
 
         for history in invalid_histories:
             with self.subTest(history=history):
-                ledger = ObservationLedger.restore(nodes, history, limit=4)
-                events = ledger.observe(
-                    nodes, observed_at="2026-08-07T01:00:00Z"
-                )
-                self.assertEqual("observed-000001", events[0]["id"])
-                self.assertEqual("NODE_OBSERVED", events[0]["kind"])
+                with self.assertRaises(ObservationError):
+                    ObservationLedger.restore(nodes, history, limit=4)
+
+    def test_malformed_observed_event_content_fails_closed(self):
+        nodes = [node("orchestrator", status="pending", assignee="P1")]
+        missing_fields = []
+        for field in ("kind", "nodeId", "at", "message"):
+            event = observed_event(1)
+            del event[field]
+            missing_fields.append(event)
+        invalid_events = missing_fields + [
+            {**observed_event(1), "kind": "UNSUPPORTED"},
+            {**observed_event(1), "kind": ""},
+            {**observed_event(1), "kind": []},
+            {**observed_event(1), "nodeId": ""},
+            {**observed_event(1), "at": "not-a-timestamp"},
+            {**observed_event(1), "message": ""},
+            {**observed_event(1), "generation": True},
+        ]
+
+        for event in invalid_events:
+            with self.subTest(event=event):
+                with self.assertRaises(ObservationError):
+                    ObservationLedger.restore(nodes, [event], limit=4)
+
+    def test_duplicate_observed_ids_fail_closed(self):
+        nodes = [node("orchestrator", status="pending", assignee="P1")]
+        duplicate = observed_event(1)
+
+        with self.assertRaises(ObservationError):
+            ObservationLedger.restore(nodes, [duplicate, duplicate], limit=4)
+
+    def test_non_monotonic_history_fails_before_bounding(self):
+        nodes = [node("orchestrator", status="pending", assignee="P1")]
+        history = [
+            observed_event(2),
+            observed_event(1),
+            observed_event(3),
+            observed_event(4),
+        ]
+
+        with self.assertRaises(ObservationError):
+            ObservationLedger.restore(nodes, history, limit=2)
 
     def test_restoration_retains_only_the_newest_bounded_suffix(self):
         nodes = [node("orchestrator", status="pending", assignee="P1")]

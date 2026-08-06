@@ -342,7 +342,7 @@ class SessionSnapshotTests(unittest.TestCase):
         self.assertEqual("observed-000004", changed["events"][-1]["id"])
         self.assertEqual("NODE_STATUS_CHANGED", changed["events"][-1]["kind"])
 
-    def test_main_restores_legacy_sequence_without_importing_edges(self):
+    def test_main_fails_closed_for_malformed_legacy_history(self):
         legacy = build_session_snapshot(
             self.agents,
             "wK",
@@ -361,6 +361,7 @@ class SessionSnapshotTests(unittest.TestCase):
             }
             for index in range(8)
         ]
+        legacy["events"] = [{"id": "observed-000001"}]
         argv = [
             "session_publisher.py",
             "--workspace-id",
@@ -408,7 +409,10 @@ class SessionSnapshotTests(unittest.TestCase):
         self.assertEqual(112, snapshot["sequence"])
         self.assertEqual("publisher-sha", snapshot["publisherFingerprint"])
         self.assertEqual([], snapshot["edges"])
-        self.assertGreater(len(snapshot["events"]), 0)
+        self.assertEqual(len(self.agents), len(snapshot["events"]))
+        self.assertTrue(
+            all(event.get("kind") == "NODE_OBSERVED" for event in snapshot["events"])
+        )
 
     def test_heartbeat_posts_compact_identity_to_presence_endpoint(self):
         response = mock.MagicMock()

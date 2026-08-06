@@ -51,20 +51,16 @@ class ObservationLedger:
         ledger = cls(limit)
         if not events:
             return ledger
-        retained = copy.deepcopy(events[-limit:])
-        counters = []
-        for event in retained:
-            event_id = event.get("id") if isinstance(event, dict) else None
-            if not isinstance(event_id, str) or not event_id.startswith(
-                "observed-"
-            ):
-                return cls(limit)
-            suffix = event_id.removeprefix("observed-")
-            if not suffix.isdigit():
-                return cls(limit)
-            counters.append(int(suffix))
-        ledger._events = retained
-        ledger._counter = max(counters)
+        if not isinstance(events, list):
+            raise ObservationError("invalid observed event history")
+        previous_counter = 0
+        for event in events:
+            counter = _validate_observed_event(event)
+            if counter <= previous_counter:
+                raise ObservationError("observed event ids must strictly increase")
+            previous_counter = counter
+        ledger._events = copy.deepcopy(events[-limit:])
+        ledger._counter = previous_counter
         ledger._previous = ledger._project(nodes)
         return ledger
 
@@ -178,6 +174,40 @@ def _message(kind: str, node_id: str, projection: dict) -> str:
     if kind == "NODE_REMOVED":
         return f"{node_id} is no longer observed"
     return f"{node_id} {kind}"
+
+
+def _validate_observed_event(event: object) -> int:
+    if not isinstance(event, dict):
+        raise ObservationError("invalid observed event history")
+    event_id = event.get("id")
+    if not isinstance(event_id, str) or not event_id.startswith("observed-"):
+        raise ObservationError("invalid observed event id")
+    suffix = event_id.removeprefix("observed-")
+    if not suffix.isdigit() or int(suffix) <= 0:
+        raise ObservationError("invalid observed event id")
+    kind = event.get("kind")
+    if not isinstance(kind, str) or kind not in _KIND_ORDER:
+        raise ObservationError("invalid observed event kind")
+    for field in ("nodeId", "message"):
+        value = event.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ObservationError(f"invalid observed event {field}")
+    at = event.get("at")
+    if not isinstance(at, str) or not at.strip():
+        raise ObservationError("invalid observed event timestamp")
+    timestamp = at[:-1] + "+00:00" if at.endswith("Z") else at
+    try:
+        parsed = datetime.fromisoformat(timestamp)
+    except ValueError as error:
+        raise ObservationError("invalid observed event timestamp") from error
+    if parsed.tzinfo is None:
+        raise ObservationError("invalid observed event timestamp")
+    generation = event.get("generation")
+    if "generation" in event and (
+        isinstance(generation, bool) or not isinstance(generation, int)
+    ):
+        raise ObservationError("invalid observed event generation")
+    return int(suffix)
 
 
 def _utc_now() -> str:
