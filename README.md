@@ -83,8 +83,9 @@ not discover other workspaces or modify Herdr state. See
 
 The adapter reuses its existing two-second poll to emit bounded, timestamped
 lifecycle events (`NODE_OBSERVED`, `NODE_STATUS_CHANGED`,
-`NODE_ASSIGNEE_CHANGED`, `NODE_REMOVED`) for every observed node — never raw
-prompt, command, tool, token, or log activity. Unchanged polls publish nothing.
+`NODE_ASSIGNEE_CHANGED`, `NODE_GENERATION_CHANGED`, `NODE_REMOVED`) for every
+observed node — never raw prompt, command, tool, token, or log activity.
+Unchanged polls publish nothing.
 
 Session mode and the synthesized operational graph observe nodes and statuses
 but have no trusted workflow-edge source, so they draw **no** edges: P1 stays in
