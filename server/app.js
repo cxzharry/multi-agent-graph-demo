@@ -132,6 +132,7 @@ export function createApp({
   distDirectory = path.join(repositoryRoot, 'dist'),
   ingestToken,
   now,
+  runtimeFingerprint = 'unmanaged',
 } = {}) {
   const presenceStore = new PresenceStore({now});
   const store = new GraphStore(dataFile, {presenceStore});
@@ -157,6 +158,7 @@ export function createApp({
           service: 'herdr-role-graph-viewer',
           schemaVersion: 'role-graph/v1',
           capabilities: ['space-name-summary', 'session-presence'],
+          runtimeFingerprint,
         });
         return;
       }

@@ -1,10 +1,16 @@
+import {spawn, spawnSync} from 'node:child_process';
+import {once} from 'node:events';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 import {afterEach, beforeEach, describe, expect, test} from 'vitest';
 
 import {createApp} from '../server/app.js';
+
+const serverEntryPoint = fileURLToPath(new URL('../server.js', import.meta.url));
 
 function snapshot(scopeId = 'scope-a', runId = 'run-1', sequence = 1) {
   return {
@@ -43,6 +49,47 @@ async function listen(server) {
 async function close(server) {
   if (!server?.listening) return;
   await new Promise(resolve => server.close(resolve));
+}
+
+async function availablePort() {
+  const probe = createServer();
+  const baseUrl = await listen(probe);
+  await close(probe);
+  return Number(new URL(baseUrl).port);
+}
+
+async function waitForHealth(child, baseUrl) {
+  let stderr = '';
+  child.stderr.on('data', chunk => {
+    stderr += chunk;
+  });
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (child.exitCode !== null) {
+      throw new Error(`Server exited before health was ready: ${stderr}`);
+    }
+    try {
+      const response = await fetch(`${baseUrl}/api/health`);
+      if (response.ok) return response;
+    } catch {
+      // Wait for the child process to bind its port.
+    }
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  throw new Error(`Server health did not become ready: ${stderr}`);
+}
+
+function waitForExit(child, timeout = 1_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Server did not reject invalid CLI options')),
+      timeout,
+    );
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer);
+      resolve({code, signal});
+    });
+  });
 }
 
 async function post(baseUrl, body, headers = {}) {
@@ -98,6 +145,7 @@ describe('role graph server', () => {
   let dataFile;
   let server;
   let baseUrl;
+  let cliServer;
 
   beforeEach(async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'role-graph-server-'));
@@ -107,6 +155,11 @@ describe('role graph server', () => {
   });
 
   afterEach(async () => {
+    if (cliServer?.exitCode === null && cliServer.signalCode === null) {
+      const exited = once(cliServer, 'exit');
+      cliServer.kill('SIGTERM');
+      await exited;
+    }
     await close(server);
     await rm(directory, {recursive: true, force: true});
   });
@@ -126,7 +179,69 @@ describe('role graph server', () => {
       service: 'herdr-role-graph-viewer',
       schemaVersion: 'role-graph/v1',
       capabilities: ['space-name-summary', 'session-presence'],
+      runtimeFingerprint: 'unmanaged',
     });
+  });
+
+  test('returns the configured viewer runtime fingerprint', async () => {
+    await close(server);
+    server = createApp({dataFile, runtimeFingerprint: 'viewer-sha'});
+    baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/api/health`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      service: 'herdr-role-graph-viewer',
+      schemaVersion: 'role-graph/v1',
+      capabilities: ['space-name-summary', 'session-presence'],
+      runtimeFingerprint: 'viewer-sha',
+    });
+  });
+
+  test('forwards explicit port and runtime fingerprint CLI options', async () => {
+    const port = await availablePort();
+    cliServer = spawn(
+      process.execPath,
+      [serverEntryPoint, '--port', String(port), '--runtime-fingerprint', 'viewer-sha'],
+      {
+        env: {...process.env, PORT: '0', ROLE_GRAPH_DATA_FILE: dataFile},
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+
+    const response = await waitForHealth(cliServer, `http://127.0.0.1:${port}`);
+
+    expect(await response.json()).toMatchObject({runtimeFingerprint: 'viewer-sha'});
+  });
+
+  test('rejects an invalid explicit port', () => {
+    const result = spawnSync(
+      process.execPath,
+      [serverEntryPoint, '--port', 'not-a-port'],
+      {encoding: 'utf8', timeout: 1_000},
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(/--port/);
+  });
+
+  test('rejects an empty explicit runtime fingerprint', async () => {
+    const port = await availablePort();
+    let stderr = '';
+    cliServer = spawn(
+      process.execPath,
+      [serverEntryPoint, '--port', String(port), '--runtime-fingerprint', ''],
+      {stdio: ['ignore', 'pipe', 'pipe']},
+    );
+    cliServer.stderr.on('data', chunk => {
+      stderr += chunk;
+    });
+
+    const {code} = await waitForExit(cliServer);
+
+    expect(code).not.toBe(0);
+    expect(stderr).toMatch(/--runtime-fingerprint requires a value/);
   });
 
   test('authenticates in-memory presence, expires it, and does not churn JSONL', async () => {
