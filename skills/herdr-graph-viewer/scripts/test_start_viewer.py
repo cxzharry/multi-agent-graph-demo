@@ -139,6 +139,89 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
         self.assertIsNotNone(self.launcher, "start_viewer.py is missing")
         return self.launcher
 
+    def launch_runtime_matches(self, server_status: str, publisher_status: str):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            RuntimeFingerprintTest().write_runtime_tree(repo)
+            publisher_fingerprint = launcher.publisher_runtime_fingerprint(repo)
+            events: list[tuple[str, ...]] = []
+
+            def fake_herdr(*args):
+                self.assertEqual(args[:2], ("pane", "send-keys"))
+                events.append(("stop", args[2]))
+                return {"result": {}}
+
+            def fake_run(pane_id: str, command: str):
+                events.append(("run", pane_id, command))
+
+            args = Namespace(
+                state=None,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(
+                launcher, "select_state", return_value=None
+            ), mock.patch.object(
+                launcher,
+                "_resolve_p1_identity",
+                return_value=launcher.P1Identity("w1:p1", "run-1"),
+            ), mock.patch.object(
+                launcher, "_resolve_space_name", return_value="graph-runtime"
+            ), mock.patch.object(
+                launcher,
+                "_select_server",
+                return_value=(4173, launcher.ProcessMatch("server", server_status)),
+            ), mock.patch.object(
+                launcher,
+                "_find_session_publisher",
+                return_value=launcher.ProcessMatch("publisher", publisher_status),
+            ), mock.patch.object(
+                launcher,
+                "_snapshot",
+                return_value={
+                    "spaceName": "graph-runtime",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 111,
+                    "publisherFingerprint": publisher_fingerprint,
+                },
+            ), mock.patch.object(
+                launcher, "_herdr", side_effect=fake_herdr
+            ), mock.patch.object(
+                launcher, "_wait_for_shell"
+            ), mock.patch.object(
+                launcher, "_run_in_pane", side_effect=fake_run
+            ), mock.patch.object(
+                launcher, "_wait_for_viewer"
+            ), mock.patch.object(
+                launcher,
+                "_wait_for_snapshot",
+                return_value={
+                    "sequence": 112,
+                    "publisherFingerprint": publisher_fingerprint,
+                },
+            ), mock.patch.object(
+                launcher,
+                "_split_pane",
+                side_effect=AssertionError("matched runtimes must keep their panes"),
+            ):
+                result = launcher.launch(args)
+
+        return result, events
+
     def test_publisher_classification_requires_current_fingerprint(self):
         launcher = self.require_launcher()
         state = "/tmp/run/workspace-state.json"
@@ -828,6 +911,34 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
             self.assertTrue(result["publisher"]["replaced"])
             self.assertEqual(result["viewerFingerprint"], viewer_fingerprint)
             self.assertEqual(result["publisherFingerprint"], publisher_fingerprint)
+
+    def test_stale_server_cycles_current_publisher_in_lifecycle_order(self):
+        result, events = self.launch_runtime_matches("stale", "reusable")
+
+        self.assertEqual(
+            [(event[0], event[1]) for event in events],
+            [
+                ("stop", "publisher"),
+                ("stop", "server"),
+                ("run", "server"),
+                ("run", "publisher"),
+            ],
+        )
+        self.assertIn("--sequence-floor 112", events[-1][2])
+        self.assertTrue(result["server"]["replaced"])
+        self.assertTrue(result["publisher"]["replaced"])
+        self.assertFalse(result["publisher"]["reused"])
+        self.assertEqual(result["publisher"]["pane_id"], "publisher")
+
+    def test_current_server_and_publisher_reuse_without_mutation(self):
+        result, events = self.launch_runtime_matches("reusable", "reusable")
+
+        self.assertEqual(events, [])
+        self.assertTrue(result["server"]["reused"])
+        self.assertFalse(result["server"]["replaced"])
+        self.assertTrue(result["publisher"]["reused"])
+        self.assertFalse(result["publisher"]["replaced"])
+        self.assertEqual(result["publisher"]["pane_id"], "publisher")
 
     def test_wait_for_shell_is_bounded(self):
         launcher = self.require_launcher()

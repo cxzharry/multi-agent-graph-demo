@@ -1200,8 +1200,12 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                 publisher_match = _find_publisher_for_state(
                     workspace_id, selected.path, endpoint
                 )
-        publisher_reused = publisher_match.status == "reusable"
-        publisher_replaced = publisher_match.status == "stale"
+        publisher_replaced = publisher_match.status == "stale" or (
+            server_replaced and publisher_match.status == "reusable"
+        )
+        publisher_reused = (
+            publisher_match.status == "reusable" and not publisher_replaced
+        )
         publisher_pane = publisher_match.pane_id
 
         prior_snapshot = _snapshot(port, scope_id, run_id)
