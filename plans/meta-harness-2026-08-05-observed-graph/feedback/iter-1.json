@@ -1,0 +1,118 @@
+{
+  "schema_version": "meta-harness-feedback/v1",
+  "iteration": 1,
+  "evaluated_at_utc": "2026-08-06T18:22:37Z",
+  "evaluator": "independent-meta-harness",
+  "candidate": {
+    "commit": "800e6e34fcba015b63a3289769c9b7832c34f36a",
+    "tree": "c4fe3cccfe7693f97d28f55e3ae8c5df925ec811",
+    "base": "82a53906272885ffaece84321e64284c564d48c6"
+  },
+  "rubric": {
+    "path": "plans/meta-harness-2026-08-05-observed-graph/rubric.json",
+    "locked": true,
+    "target": 8.5,
+    "target_min": 8.0
+  },
+  "hard_gates": [
+    {
+      "id": "candidate_identity",
+      "status": "PASS",
+      "evidence": "git rev-parse HEAD => 800e6e34fcba015b63a3289769c9b7832c34f36a; git rev-parse HEAD^{tree} => c4fe3cccfe7693f97d28f55e3ae8c5df925ec811."
+    },
+    {
+      "id": "required_receipts",
+      "status": "PASS",
+      "evidence": "Read integration-g3, independent_review-g3, functional_qc-g1, design_qc-g1, and persona_qc-g1 under the exact wK run. Each is schema_version herdr-lane-receipt/v1, status PASS, and input/output identity-bound to the candidate tuple, except integration-g3 whose output_artifact is the candidate tuple."
+    },
+    {
+      "id": "scope_control",
+      "status": "PASS",
+      "evidence": "Inspection was limited to this worktree and /Users/haido/.codex/herdr-runs/wK/herdr-graph-observer-truth-20260805/receipts. No product/source/skill files were edited; generated build/browser checks left no tracked diff."
+    },
+    {
+      "id": "verification_commands",
+      "status": "PASS",
+      "evidence": "Reran focused Python publisher/session tests, graph viewer launcher tests, Vitest graph/protocol/store tests, npm build, and browser smoke. Final evidence-schema validation and git diff --check are recorded in outcome.json after artifact creation."
+    }
+  ],
+  "criteria": [
+    {
+      "id": "event_correctness",
+      "score": 9.3,
+      "weight": 0.25,
+      "evidence": [
+        "adapters/herdr/observed_events.py defines ObservationLedger with monotonic observed-* event IDs, UTC timestamps, ordered transition kinds, defensive copies, and DEFAULT_LIMIT 64 retention.",
+        "The ledger detects NODE_OBSERVED, NODE_STATUS_CHANGED, NODE_ASSIGNEE_CHANGED, NODE_GENERATION_CHANGED, and NODE_REMOVED; generation-only changes are explicitly covered.",
+        "python3 -B -m unittest adapters.herdr.test_observed_events adapters.herdr.test_session_publisher adapters.herdr.test_publisher passed 70 tests.",
+        "functional_qc-g1 confirms immediate lifecycle events for current nodes, unchanged poll dedupe, bounded ordered history, and generation-only event behavior."
+      ],
+      "limitations": [
+        "Scores below 10 because long-duration retention behavior was validated by bounded tests and receipt probes, not by a new multi-hour live run."
+      ]
+    },
+    {
+      "id": "relationship_truthfulness",
+      "score": 9.4,
+      "weight": 0.25,
+      "evidence": [
+        "adapters/herdr/publisher.py synthetic auto-operational manifests return edges [] and failurePolicies [] when no trusted workflow-edge source exists.",
+        "adapters/herdr/session_publisher.py live-session snapshots return edges [], failurePolicies [], and activeFailureRoute null while preserving observed nodes/statuses.",
+        "Custom manifests still flow through materialization with authored edges and failurePolicies copied into the snapshot; no observed-topology notice is shown for declared custom topology.",
+        "node tests/browser-smoke.mjs passed and asserted zero .forward-edge and zero feedback-edge for observed topology, a visible relationships-unavailable notice, and declared custom topology relationships without the notice.",
+        "independent_review-g3 reports adversarial probes: session_edges 0, synthetic_edges 0, custom_edges_exact true, custom_failurepolicies_exact true."
+      ],
+      "limitations": [
+        "Custom topology exactness was evaluated from source, unit tests, and smoke coverage rather than exhaustive manifest permutations."
+      ]
+    },
+    {
+      "id": "runtime_efficiency",
+      "score": 8.8,
+      "weight": 0.15,
+      "evidence": [
+        "Both publishers reuse existing polling paths; no new background process, hook, or extra poll loop was introduced for lifecycle observation.",
+        "publisher.publish_if_changed still returns early when the control-state revision is unchanged before building or publishing a snapshot.",
+        "session_publisher.publish_if_changed compares projections with sequence/generatedAt removed and returns the previous snapshot on unchanged observed topology/events.",
+        "ObservationLedger bounds retained lifecycle history and publisher._merge_observed_events caps combined authored plus observed events to EVENT_LIMIT.",
+        "functional_qc-g1 and integration-g3 both report unchanged poll dedupe and bounded event retention."
+      ],
+      "limitations": [
+        "No fresh profiler or stress test was run in this evaluator pass; efficiency score rests on code-path inspection plus targeted behavioral tests."
+      ]
+    },
+    {
+      "id": "compatibility_isolation",
+      "score": 9.1,
+      "weight": 0.2,
+      "evidence": [
+        "Changed paths are limited to README/docs, adapters/herdr publisher/session/observed-event code and tests, herdr-graph-viewer skill docs, UI tests, and UI rendering/CSS/smoke files.",
+        "No sibling skill source changed; independent_review-g3 reports a forbidden-path scan PASS with only skills/herdr-graph-viewer/SKILL.md under skills changed.",
+        "Launcher tests passed 48 tests and retain exact workspace, endpoint, topology mode, P1 pane, and P1 session isolation behavior.",
+        "Python publisher/session tests passed 70 tests; npm test graph/protocol/store passed 37 tests; npm run build passed.",
+        "Receipts confirm presence behavior, historical/custom routing, and workspace isolation were preserved."
+      ],
+      "limitations": [
+        "The evaluator did not rerun every repository test file, but it reran the same focused cross-layer matrix relevant to the locked spec."
+      ]
+    },
+    {
+      "id": "live_operator_evidence",
+      "score": 8.9,
+      "weight": 0.15,
+      "evidence": [
+        "node tests/browser-smoke.mjs passed locally and produced artifacts/live-role-graph-browser-smoke.png with sha256 a5a46ccad7086829fc134290536cb705e41f494e3162c4bf68d13fced2c757a7.",
+        "Browser smoke reported Initial 11-role React Flow scale: 1.034 and asserts observed zero relationships plus timeline ordering/recency behavior.",
+        "design_qc-g1 records real browser smoke at 1440x1000 with readable hierarchy, role/slot labels, no fabricated relationships in observed views, and declared custom topology preserved.",
+        "persona_qc-g1 records targeted local server plus synthetic publish from declared state revision 18, with docs/UI language understandable to operators."
+      ],
+      "limitations": [
+        "I did not attach a new live wK control-pane capture in this evaluator turn; I used the immutable run receipts plus a fresh local browser smoke on the candidate."
+      ]
+    }
+  ],
+  "weighted_score": 9.15,
+  "minimum_score": 8.8,
+  "verdict": "SUCCESS",
+  "actionable_failure": null
+}

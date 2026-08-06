@@ -1,0 +1,84 @@
+{
+  "schema_version": "meta-harness-trace/v1",
+  "trace_id": "herdr-graph-observer-truth-20260805-iter-1-independent-eval",
+  "created_at_utc": "2026-08-06T18:22:37Z",
+  "plan_dir": "plans/meta-harness-2026-08-05-observed-graph",
+  "candidate": {
+    "commit": "800e6e34fcba015b63a3289769c9b7832c34f36a",
+    "tree": "c4fe3cccfe7693f97d28f55e3ae8c5df925ec811"
+  },
+  "rubric": {
+    "locked": true,
+    "target": 8.5,
+    "target_min": 8.0,
+    "criteria": [
+      "event_correctness",
+      "relationship_truthfulness",
+      "runtime_efficiency",
+      "compatibility_isolation",
+      "live_operator_evidence"
+    ]
+  },
+  "feedback_sources": [
+    "plans/meta-harness-2026-08-05-observed-graph/plan.md",
+    "plans/meta-harness-2026-08-05-observed-graph/spec.md",
+    "plans/meta-harness-2026-08-05-observed-graph/state/state-0.json",
+    "/Users/haido/.codex/herdr-runs/wK/herdr-graph-observer-truth-20260805/receipts/integration-g3.json",
+    "/Users/haido/.codex/herdr-runs/wK/herdr-graph-observer-truth-20260805/receipts/independent_review-g3.json",
+    "/Users/haido/.codex/herdr-runs/wK/herdr-graph-observer-truth-20260805/receipts/functional_qc-g1.json",
+    "/Users/haido/.codex/herdr-runs/wK/herdr-graph-observer-truth-20260805/receipts/design_qc-g1.json",
+    "/Users/haido/.codex/herdr-runs/wK/herdr-graph-observer-truth-20260805/receipts/persona_qc-g1.json",
+    "fresh evaluator commands recorded in outcome.json"
+  ],
+  "criterion_evidence": {
+    "event_correctness": [
+      "ObservationLedger ordered bounded lifecycle events with generation-only detection.",
+      "70 focused Python publisher/session tests passed."
+    ],
+    "relationship_truthfulness": [
+      "Session and synthetic snapshots emit zero edges/failure routes.",
+      "Custom manifest authored topology remains exact by source/test/receipt evidence."
+    ],
+    "runtime_efficiency": [
+      "No added poll loop; unchanged control revision and unchanged session projection do not publish.",
+      "Event histories are bounded."
+    ],
+    "compatibility_isolation": [
+      "Candidate path changes are scoped to graph viewer docs/UI and Herdr adapter publisher paths.",
+      "Launcher and workspace isolation tests passed."
+    ],
+    "live_operator_evidence": [
+      "Fresh browser smoke passed with screenshot sha256 a5a46ccad7086829fc134290536cb705e41f494e3162c4bf68d13fced2c757a7.",
+      "Design/persona receipts provide real-browser/operator-language evidence for the immutable candidate."
+    ]
+  },
+  "scores": {
+    "event_correctness": 9.3,
+    "relationship_truthfulness": 9.4,
+    "runtime_efficiency": 8.8,
+    "compatibility_isolation": 9.1,
+    "live_operator_evidence": 8.9
+  },
+  "owner_metrics": {
+    "executor": "integration-g3 plus accepted lane work",
+    "orchestrator": "herdr-orchestrator meta-harness run wK",
+    "learning_owner": "herdr-graph-viewer",
+    "failure_domain": null,
+    "meta_harness_used": true
+  },
+  "retry_failures": [],
+  "learning_signals": [
+    "Observed runtime topology must state relationship uncertainty instead of inventing role or P-number edges.",
+    "Lifecycle events should stay bounded and derived from existing polling snapshots."
+  ],
+  "friction_summary": [
+    "The only residual limitation is lack of a new long-duration live wK capture in this evaluator turn."
+  ],
+  "outcome": {
+    "exit_code": "SUCCESS",
+    "stop_condition": "SUCCESS",
+    "best_iteration": 1,
+    "weighted_score": 9.15,
+    "minimum_score": 8.8
+  }
+}
