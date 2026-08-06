@@ -563,6 +563,118 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "ambiguous_publisher")
 
+    def test_session_publisher_discovery_retries_timeout_then_finds_current(self):
+        launcher = self.require_launcher()
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        process_info_calls = 0
+        command = (
+            "python3 -B adapters/herdr/session_publisher.py "
+            "--workspace-id w1 --space-name graph-runtime "
+            "--p1-session-id run-1 --p1-pane-id w1:p1 "
+            f"--endpoint {endpoint} --watch "
+            "--runtime-fingerprint publisher-current"
+        )
+
+        def fake_herdr(*args):
+            nonlocal process_info_calls
+            if args[:2] == ("pane", "list"):
+                return {"result": {"panes": [{"pane_id": "publisher"}]}}
+            if args[:2] == ("pane", "process-info"):
+                process_info_calls += 1
+                if process_info_calls == 1:
+                    raise launcher.LauncherError("herdr_timeout", "timed out")
+                return {
+                    "result": {
+                        "process_info": {
+                            "foreground_processes": [{"cmdline": command}]
+                        }
+                    }
+                }
+            raise AssertionError(args)
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            match = launcher._find_session_publisher(
+                "w1",
+                "graph-runtime",
+                "run-1",
+                "w1:p1",
+                endpoint,
+                "publisher-current",
+            )
+
+        self.assertEqual(match, launcher.ProcessMatch("publisher", "reusable"))
+        self.assertEqual(process_info_calls, 2)
+
+    def test_session_publisher_discovery_repeated_timeout_fails_before_split(self):
+        launcher = self.require_launcher()
+        process_info_calls = 0
+
+        def fake_herdr(*args):
+            nonlocal process_info_calls
+            if args[:2] == ("pane", "list"):
+                return {"result": {"panes": [{"pane_id": "publisher"}]}}
+            if args[:2] == ("pane", "process-info"):
+                process_info_calls += 1
+                raise launcher.LauncherError("herdr_timeout", "timed out")
+            raise AssertionError(args)
+
+        with mock.patch.object(
+            launcher, "_herdr", side_effect=fake_herdr
+        ), mock.patch.object(launcher, "_split_pane") as split_pane:
+            with self.assertRaises(launcher.LauncherError) as raised:
+                launcher._find_session_publisher(
+                    "w1",
+                    "graph-runtime",
+                    "run-1",
+                    "w1:p1",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    "publisher-current",
+                )
+
+        self.assertEqual(raised.exception.code, "herdr_timeout")
+        self.assertEqual(process_info_calls, 2)
+        split_pane.assert_not_called()
+
+    def test_session_publisher_discovery_healthy_path_queries_once(self):
+        launcher = self.require_launcher()
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        process_info_calls = 0
+        command = (
+            "python3 -B adapters/herdr/session_publisher.py "
+            "--workspace-id w1 --space-name graph-runtime "
+            "--p1-session-id run-1 --p1-pane-id w1:p1 "
+            f"--endpoint {endpoint} --watch "
+            "--runtime-fingerprint publisher-current"
+        )
+
+        def fake_herdr(*args):
+            nonlocal process_info_calls
+            if args[:2] == ("pane", "list"):
+                return {"result": {"panes": [{"pane_id": "publisher"}]}}
+            if args[:2] == ("pane", "process-info"):
+                process_info_calls += 1
+                return {
+                    "result": {
+                        "process_info": {
+                            "foreground_processes": [{"cmdline": command}]
+                        }
+                    }
+                }
+            raise AssertionError(args)
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            match = launcher._find_session_publisher(
+                "w1",
+                "graph-runtime",
+                "run-1",
+                "w1:p1",
+                endpoint,
+                "publisher-current",
+            )
+
+        self.assertEqual(match, launcher.ProcessMatch("publisher", "reusable"))
+        self.assertEqual(process_info_calls, 1)
+
     def test_duplicate_control_state_fallback_publishers_fail_closed(self):
         launcher = self.require_launcher()
         target = Path("/tmp/run/workspace-state.json")

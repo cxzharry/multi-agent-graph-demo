@@ -886,36 +886,45 @@ def _find_session_publisher(
     endpoint: str,
     expected_runtime_fingerprint: str,
 ) -> ProcessMatch:
-    matches: dict[str, str] = {}
-    for pane in _workspace_panes(workspace_id):
-        pane_id = pane.get("pane_id")
-        if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
-            continue
-        try:
-            response = _herdr("pane", "process-info", "--pane", pane_id)
-        except LauncherError as error:
-            if error.details.get("invalid_response"):
-                raise
-            if error.code in {"herdr_error", "herdr_timeout"}:
+    last_transient_error: LauncherError | None = None
+    for _ in range(2):
+        matches: dict[str, str] = {}
+        uncertain = False
+        for pane in _workspace_panes(workspace_id):
+            pane_id = pane.get("pane_id")
+            if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
                 continue
-            raise
-        info = _result_value(response, "process_info") or {}
-        if isinstance(info, dict):
-            match = session_publisher_matches(
-                info,
-                workspace_id,
-                space_name,
-                p1_session_id,
-                p1_pane_id,
-                endpoint,
-                True,
-                expected_runtime_fingerprint,
-            )
-            if match.status == "reusable":
-                matches[pane_id] = "reusable"
-            elif match.status == "stale":
-                matches[pane_id] = "stale"
-    return _unique_publisher_match(workspace_id, matches)
+            try:
+                response = _herdr("pane", "process-info", "--pane", pane_id)
+            except LauncherError as error:
+                if error.details.get("invalid_response"):
+                    raise
+                if error.code in {"herdr_error", "herdr_timeout"}:
+                    last_transient_error = error
+                    uncertain = True
+                    continue
+                raise
+            info = _result_value(response, "process_info") or {}
+            if isinstance(info, dict):
+                match = session_publisher_matches(
+                    info,
+                    workspace_id,
+                    space_name,
+                    p1_session_id,
+                    p1_pane_id,
+                    endpoint,
+                    True,
+                    expected_runtime_fingerprint,
+                )
+                if match.status == "reusable":
+                    matches[pane_id] = "reusable"
+                elif match.status == "stale":
+                    matches[pane_id] = "stale"
+        found = _unique_publisher_match(workspace_id, matches)
+        if not uncertain:
+            return found
+    assert last_transient_error is not None
+    raise last_transient_error
 
 
 def _unique_publisher_match(
