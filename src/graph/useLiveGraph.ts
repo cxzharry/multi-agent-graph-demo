@@ -41,8 +41,35 @@ export function selectionQuery(selection: GraphSelection): string {
   }).toString();
 }
 
-export function graphOptionLabel(graph: GraphSummary): string {
-  return `${graph.isLive ? 'LIVE' : graph.runStatus} · ${graph.spaceName ?? graph.scopeId} · ${graph.shortName}`;
+export function graphOptionLabel(
+  graph: GraphSummary,
+  graphs: GraphSummary[] = [graph],
+): string {
+  const prefix = `${graph.isLive ? 'LIVE' : graph.runStatus} · ${graph.spaceName ?? graph.scopeId}`;
+  const collisions = graphs.filter(
+    candidate =>
+      `${candidate.isLive ? 'LIVE' : candidate.runStatus} · ${candidate.spaceName ?? candidate.scopeId}` ===
+        prefix && candidate.shortName === graph.shortName,
+  );
+  if (collisions.length <= 1) return `${prefix} · ${graph.shortName}`;
+
+  const runParts = graph.runId.split('-').filter(Boolean);
+  const initialParts = Math.max(1, graph.shortName.split('-').length);
+  for (let count = initialParts; count <= runParts.length; count += 1) {
+    const suffix = runParts.slice(-count).join('-');
+    if (
+      collisions.every(
+        candidate =>
+          candidate === graph ||
+          candidate.runId.split('-').filter(Boolean).slice(-count).join('-') !==
+            suffix,
+      )
+    ) {
+      return `${prefix} · ${suffix}`;
+    }
+  }
+
+  return `${prefix} · ${graph.shortName} · ${graph.scopeId.split(':').slice(-1)[0]}`;
 }
 
 export type ConnectionState =

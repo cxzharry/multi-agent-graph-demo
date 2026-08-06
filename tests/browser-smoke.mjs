@@ -115,6 +115,9 @@ async function responsiveVisualMetrics(page) {
     const canvas = required('.react-flow');
     const viewport = required('.react-flow__viewport');
     const timelinePanel = required('.timeline-panel');
+    const timelineList = required('.timeline-list');
+    const graphMeta = required('.graph-meta');
+    const relationshipNotice = document.querySelector('.relationship-notice');
     const transform = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
     const scale = Math.abs(transform.a);
     const bounds = element => {
@@ -125,6 +128,7 @@ async function responsiveVisualMetrics(page) {
         top: rect.top,
         bottom: rect.bottom,
         width: rect.width,
+        height: rect.height,
       };
     };
     const nodes = [...document.querySelectorAll('[data-testid="role-node"]')];
@@ -132,6 +136,7 @@ async function responsiveVisualMetrics(page) {
 
     return {
       viewportWidth: window.innerWidth,
+      documentHeight: document.documentElement.scrollHeight,
       documentWidth: document.documentElement.scrollWidth,
       bodyWidth: document.body.scrollWidth,
       graphPanel: bounds(graphPanel),
@@ -156,6 +161,22 @@ async function responsiveVisualMetrics(page) {
         const assignee = required('.assignee-chip', node);
         return Number.parseFloat(getComputedStyle(assignee).fontSize) * scale;
       }),
+      statusSizes: nodes.map(node => {
+        const status = required('.role-status', node);
+        return Number.parseFloat(getComputedStyle(status).fontSize) * scale;
+      }),
+      assigneesContained: nodes.every(node => {
+        const assignee = required('.assignee-chip', node);
+        return (
+          assignee.scrollWidth <= assignee.clientWidth + 1 &&
+          assignee.scrollHeight <= assignee.clientHeight + 1
+        );
+      }),
+      overlayOverlap: relationshipNotice
+        ? overlapArea(bounds(graphMeta), bounds(relationshipNotice))
+        : 0,
+      timelineScrolls:
+        timelineList.scrollHeight > timelineList.clientHeight + 1,
       timelineRowsContained: timelineRows.every(row => {
         const content = required(':scope > div:last-child', row);
         const metadata = required('small', row);
@@ -171,6 +192,13 @@ async function responsiveVisualMetrics(page) {
       const element = root.querySelector(selector);
       if (!(element instanceof Element)) throw new Error(`Missing ${selector}`);
       return element;
+    }
+
+    function overlapArea(left, right) {
+      return (
+        Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left)) *
+        Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top))
+      );
     }
   });
 }
@@ -415,6 +443,61 @@ try {
     generatedAt: recentIsoTime,
     title: 'Current Herdr orchestration',
   };
+  const selectorCollisions = [
+    'functional-qc-custom-g1-fixture',
+    'functional-qc-manifestless-g1-fixture',
+  ].map((runId, index) => ({
+    ...structuredClone(compact),
+    spaceName: 'herdr-orchestrator',
+    shortName: 'g1-fixture',
+    scopeId: 'herdr:wK',
+    runId,
+    generatedAt: new Date(recentEpochMilliseconds - 4000 - index * 1000).toISOString(),
+    title: `Selector collision ${index + 1}`,
+    nodes: compact.nodes.map(node => ({...node, status: 'pending'})),
+  }));
+  const liveDensityNodeIds = Array.from(
+    {length: 9},
+    (_, index) => `019fd-live-session-${String(index + 1).padStart(2, '0')}-opaque`,
+  );
+  const liveDensityRoles = [
+    'p1_orchestrator',
+    'p2_impl',
+    'p3_impl',
+    'p4_impl',
+    'p5_integration',
+    'p6_review',
+    'p7_qc',
+    'p8_design',
+    'p9_persona',
+  ];
+  const liveDensity = {
+    ...structuredClone(compact),
+    flowId: 'live-session',
+    spaceName: 'herdr-orchestrator',
+    shortName: 'current',
+    scopeId: 'herdr:wK',
+    runId: '019fb24f-f36f-7642-8679-5c6405fb3889',
+    sequence: 187,
+    generatedAt: recentIsoTime,
+    title: 'Current Herdr workspace',
+    nodes: liveDensityRoles.map((role, index) => ({
+      id: liveDensityNodeIds[index],
+      role,
+      assignee: `${role}_live_agent_generation_two_with_long_dynamic_name`,
+      layer: index === 0 ? 0 : 1,
+      status: index === 0 || index === 3 ? 'running' : 'pending',
+      task: 'Participate in the current observed Herdr session',
+      generation: 2,
+    })),
+    edges: [],
+    events: Array.from({length: 12}, (_, index) => ({
+      id: `live-density-event-${index + 1}`,
+      at: recentIsoTime,
+      nodeId: liveDensityNodeIds[index % liveDensityNodeIds.length],
+      message: `Observed lifecycle event ${index + 1}`,
+    })),
+  };
   const historyHardening = {
     ...structuredClone(branched),
     spaceName: undefined,
@@ -445,6 +528,8 @@ try {
   await postSnapshot(baseUrl, persona);
   await postSnapshot(baseUrl, selectorLayout);
   await postSnapshot(baseUrl, historyHardening);
+  for (const collision of selectorCollisions) await postSnapshot(baseUrl, collision);
+  await postSnapshot(baseUrl, liveDensity);
   await postSnapshot(baseUrl, expiringPresence);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
@@ -675,6 +760,110 @@ try {
   );
   await page.locator('.snapshot-time').getByText(recentClockLabel).waitFor();
 
+  for (const viewport of [
+    {width: 1440, height: 1000},
+    {width: 1024, height: 900},
+    {width: 390, height: 844},
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(
+      `${baseUrl}/?${new URLSearchParams({
+        scopeId: liveDensity.scopeId,
+        runId: liveDensity.runId,
+      }).toString()}`,
+    );
+    await waitForNodeCount(page, liveDensity.nodes.length);
+    await page.evaluate(
+      () =>
+        new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    await page.waitForFunction(
+      minimum => {
+        const flowViewport = document.querySelector('.react-flow__viewport');
+        return (
+          flowViewport instanceof Element &&
+          Math.abs(
+            new DOMMatrixReadOnly(getComputedStyle(flowViewport).transform).a,
+          ) >= minimum - 0.001
+        );
+      },
+      viewport.width <= 620 ? 0.86 : 0.8,
+      {timeout: 2_000},
+    );
+
+    const metrics = await responsiveVisualMetrics(page);
+    const size = `${viewport.width}x${viewport.height}`;
+    assert.ok(
+      metrics.documentWidth <= metrics.viewportWidth &&
+        metrics.bodyWidth <= metrics.viewportWidth,
+      `${size} live-density page must not overflow horizontally`,
+    );
+    assert.ok(
+      metrics.roleTitleSizes.every(value => value >= 12) &&
+        metrics.assigneeSizes.every(value => value >= 8) &&
+        metrics.statusSizes.every(value => value >= 8),
+      `${size} live-density role, P, and status labels must remain readable ` +
+        `(role ${Math.min(...metrics.roleTitleSizes).toFixed(2)}, ` +
+        `P ${Math.min(...metrics.assigneeSizes).toFixed(2)}, ` +
+        `status ${Math.min(...metrics.statusSizes).toFixed(2)})`,
+    );
+    assert.ok(
+      metrics.roleTitlesContained && metrics.assigneesContained,
+      `${size} live-density role and P labels must not clip`,
+    );
+    assert.equal(metrics.overlayOverlap, 0, `${size} graph metadata must not overlap the topology notice`);
+    assert.ok(
+      metrics.timelinePanel.height <= metrics.graphPanel.height + 1,
+      `${size} timeline must not grow taller than the fixed graph`,
+    );
+    assert.ok(metrics.timelineScrolls, `${size} 12-event timeline must scroll independently`);
+    assert.equal(await page.locator('.forward-edge').count(), 0);
+    assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 0);
+    await page.getByTestId('relationship-notice').waitFor();
+
+    const p1Top = metrics.nodePositions[liveDensityNodeIds[0]].top;
+    const p1Bounds = metrics.nodePositions[liveDensityNodeIds[0]];
+    assert.ok(
+      p1Bounds.left >= metrics.graphPanel.left - 1 &&
+        p1Bounds.right <= metrics.graphPanel.right + 1,
+      `${size} P1 must be visible in the initial graph hierarchy`,
+    );
+    const downstreamTops = liveDensityNodeIds
+      .slice(1)
+      .map(nodeId => metrics.nodePositions[nodeId].top);
+    assert.ok(downstreamTops.every(top => p1Top < top), `${size} P1 must stay above downstream roles`);
+    assert.ok(
+      downstreamTops.every(top => Math.abs(top - downstreamTops[0]) < 1),
+      `${size} same-rank P2-P9 roles must align`,
+    );
+    assert.deepEqual(
+      await page.locator('.assignee-chip').allTextContents(),
+      ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9'],
+    );
+    const liveDensityText = await page.locator('.viewer-layout').innerText();
+    assert.ok(!liveDensityText.includes('with_long_dynamic_name'));
+    assert.ok(!liveDensityText.includes(liveDensityNodeIds[0]));
+
+    const densityScreenshotPath = path.join(
+      artifactsDirectory,
+      `live-density-${size}.png`,
+    );
+    await page.screenshot({path: densityScreenshotPath, fullPage: true});
+    console.log(`${size} live-density DOM passed. Screenshot: ${densityScreenshotPath}`);
+  }
+
+  const refreshedOptionLabels = await selector.locator('option').allTextContents();
+  assert.equal(new Set(refreshedOptionLabels).size, refreshedOptionLabels.length);
+  const collisionLabels = refreshedOptionLabels.filter(label =>
+    label.includes('g1-fixture'),
+  );
+  assert.deepEqual(collisionLabels, [
+    'PENDING · herdr-orchestrator · custom-g1-fixture',
+    'PENDING · herdr-orchestrator · manifestless-g1-fixture',
+  ]);
+
   await selector.selectOption(
     new URLSearchParams({
       scopeId: branched.scopeId,
@@ -730,14 +919,17 @@ try {
         metrics.canvas.right <= metrics.graphPanel.right + 1,
       `${size} graph panel and canvas must stay within the viewport`,
     );
+    const nodesInsidePanel = metrics.nodeBounds.filter(
+      node =>
+        node.left >= metrics.graphPanel.left - 1 &&
+        node.right <= metrics.graphPanel.right + 1 &&
+        node.bottom <= metrics.graphPanel.bottom + 1,
+    );
     assert.ok(
-      metrics.nodeBounds.every(
-        node =>
-          node.left >= metrics.graphPanel.left - 1 &&
-          node.right <= metrics.graphPanel.right + 1 &&
-          node.bottom <= metrics.graphPanel.bottom + 1,
-      ),
-      `${size} graph nodes must remain fully inside the initial graph panel`,
+      viewport.width === 390
+        ? nodesInsidePanel.length > 0
+        : nodesInsidePanel.length === metrics.nodeBounds.length,
+      `${size} graph must show initial nodes without clipping the page`,
     );
     assert.ok(
       metrics.roleTitleSizes.every(size => size >= 12) &&
@@ -785,6 +977,29 @@ try {
             ),
         ),
         `${size} must retain a visible parallel branch instead of a single chain`,
+      );
+      const pane = page.locator('.react-flow__pane');
+      const paneBox = await pane.boundingBox();
+      assert.ok(paneBox);
+      const transformBeforePan = await page
+        .locator('.react-flow__viewport')
+        .getAttribute('style');
+      const panStartX = paneBox.x + 8;
+      const panStartY = Math.min(
+        paneBox.y + paneBox.height - 20,
+        viewport.height - 20,
+      );
+      await page.mouse.move(panStartX, panStartY);
+      await page.mouse.down();
+      await page.mouse.move(panStartX + 80, panStartY, {steps: 4});
+      await page.mouse.up();
+      const transformAfterPan = await page
+        .locator('.react-flow__viewport')
+        .getAttribute('style');
+      assert.notEqual(
+        transformAfterPan,
+        transformBeforePan,
+        `${size} aligned offscreen siblings must remain reachable by panning`,
       );
     }
     const responsiveScreenshotPath = path.join(

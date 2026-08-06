@@ -9,6 +9,10 @@ export type RoleFlowNode = Node<
 
 export function RoleNode({data}: NodeProps<RoleFlowNode>) {
   const showTask = !data.synthetic;
+  const roleLabel = data.synthetic ? compactRoleLabel(data.role) : data.role;
+  const assigneeLabel = data.synthetic
+    ? compactAssigneeLabel(data.role, data.assignee)
+    : data.assignee;
 
   return (
     <article
@@ -26,11 +30,15 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
       <div className="role-node-heading">
         <span className="status-dot" aria-hidden="true" />
         <div>
-          <h3>{data.role}</h3>
+          <h3>{roleLabel}</h3>
           <p>Generation {data.generation}</p>
         </div>
-        <span className="assignee-chip" aria-label={`Assignee ${data.assignee}`}>
-          {data.assignee}
+        <span
+          className="assignee-chip"
+          aria-label={`Assignee ${data.assignee}`}
+          title={data.assignee}
+        >
+          {assigneeLabel}
         </span>
       </div>
       {showTask && <p className="role-task">{data.task}</p>}
@@ -46,4 +54,22 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
       />
     </article>
   );
+}
+
+export function compactRoleLabel(role: string): string {
+  const match = /^p\d+[_-](.+)$/i.exec(role);
+  if (!match) return role;
+  return match[1]
+    .split(/[_-]+/)
+    .map(part =>
+      ({impl: 'Implementation', qc: 'QC'} as Record<string, string>)[
+        part.toLowerCase()
+      ] ?? `${part.charAt(0).toUpperCase()}${part.slice(1)}`,
+    )
+    .join(' ');
+}
+
+export function compactAssigneeLabel(role: string, assignee: string): string {
+  const position = /(?:^|\b)(p\d+)(?:[_-]|\b)/i.exec(role)?.[1];
+  return position?.toUpperCase() ?? assignee;
 }

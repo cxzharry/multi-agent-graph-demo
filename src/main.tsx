@@ -16,7 +16,12 @@ import {
   type FeedbackFlowEdge,
 } from './graph/FeedbackEdge';
 import {layoutRoleGraph} from './graph/layout';
-import {RoleNode, type RoleFlowNode} from './graph/RoleNode';
+import {
+  compactAssigneeLabel,
+  compactRoleLabel,
+  RoleNode,
+  type RoleFlowNode,
+} from './graph/RoleNode';
 import type {GraphEvent, GraphSummary} from './graph/types';
 import {
   graphOptionLabel,
@@ -82,8 +87,16 @@ function App() {
     [snapshot],
   );
   const responsiveGraphMode = useResponsiveGraphMode();
+  const observedTopology =
+    snapshot?.flowId === 'auto-operational' ||
+    snapshot?.flowId === 'live-session';
   const positionedNodes = useMemo(() => {
-    if (responsiveGraphMode === 'desktop') return layout.positionedNodes;
+    if (
+      responsiveGraphMode === 'desktop' &&
+      (!observedTopology || layout.forwardEdges.length > 0)
+    ) {
+      return layout.positionedNodes;
+    }
 
     const groups = new Map<number, typeof layout.positionedNodes>();
     for (const node of layout.positionedNodes) {
@@ -92,8 +105,13 @@ function App() {
       groups.set(node.position.y, group);
     }
     const rows = [...groups.entries()].sort(([left], [right]) => left - right);
-    if (responsiveGraphMode === 'tablet') {
-      const rowWidth = 944;
+    if (responsiveGraphMode !== 'mobile') {
+      const widestRow = Math.max(
+        ...rows.map(
+          ([, group]) => group.length * 280 + (group.length - 1) * 52,
+        ),
+      );
+      const rowWidth = responsiveGraphMode === 'tablet' ? 944 : widestRow;
       return rows.flatMap(([y, group]) => {
         const sorted = [...group].sort(
           (left, right) =>
@@ -109,26 +127,24 @@ function App() {
       });
     }
 
-    let stageY = 0;
-    return rows.flatMap(([, group]) => {
+    return rows.flatMap(([y, group]) => {
       const sorted = [...group].sort(
         (left, right) =>
           left.position.x - right.position.x || left.id.localeCompare(right.id),
       );
-      const stage = sorted.map((node, index) => {
-        const row = Math.floor(index / 2);
-        const itemsInRow = Math.min(2, sorted.length - row * 2);
-        const rowWidth = itemsInRow * 140 + (itemsInRow - 1) * 20;
-        const left = (300 - rowWidth) / 2;
-        return {
-          ...node,
-          position: {x: left + (index % 2) * 160, y: stageY + row * 256},
-        };
-      });
-      stageY += Math.ceil(sorted.length / 2) * 256;
-      return stage;
+      const rowWidth = sorted.length * 140 + (sorted.length - 1) * 20;
+      const left = (300 - rowWidth) / 2;
+      return sorted.map((node, index) => ({
+        ...node,
+        position: {x: left + index * 160, y},
+      }));
     });
-  }, [layout.positionedNodes, responsiveGraphMode]);
+  }, [
+    layout.forwardEdges.length,
+    layout.positionedNodes,
+    observedTopology,
+    responsiveGraphMode,
+  ]);
 
   const nodes = useMemo<RoleFlowNode[]>(
     () =>
@@ -138,25 +154,28 @@ function App() {
         position: node.position,
         data: {
           ...node,
-          synthetic: snapshot?.flowId === 'auto-operational',
+          synthetic: observedTopology,
         },
         draggable: false,
         selectable: false,
       })),
-    [positionedNodes, snapshot?.flowId],
+    [observedTopology, positionedNodes],
   );
+  const minimumReadableZoom = responsiveGraphMode === 'mobile' ? 0.86 : 0.8;
   const initialFitView = useMemo<FitViewOptions<RoleFlowNode>>(() => {
     const rows = [...new Set(nodes.map(node => node.position.y))].sort(
       (left, right) => left - right,
     );
-    if (rows.length <= 4) return {padding: 0.24, maxZoom: 1.05};
+    if (rows.length <= 4) {
+      return {padding: 0.24, minZoom: minimumReadableZoom, maxZoom: 1.05};
+    }
 
     return {
       padding: 0.06,
-      minZoom: 0.85,
+      minZoom: Math.max(0.85, minimumReadableZoom),
       maxZoom: 1.05,
     };
-  }, [nodes]);
+  }, [minimumReadableZoom, nodes]);
   const graphPanelHeight = useMemo(() => {
     const rows = new Set(nodes.map(node => node.position.y));
     if (rows.size <= 4) return 720;
@@ -211,9 +230,6 @@ function App() {
   ]);
 
   const selectedValue = selection ? selectionQuery(selection) : '';
-  const observedTopology =
-    snapshot?.flowId === 'auto-operational' ||
-    snapshot?.flowId === 'live-session';
   const missingSelection = Boolean(
     selection &&
       !graphs.some(graph => graphMatchesSelection(graph, selection)),
@@ -221,6 +237,14 @@ function App() {
   const timeline = snapshot ? [...snapshot.events].slice(-12).reverse() : [];
   const activeGraphs = graphs.filter(graph => graph.isLive);
   const historicalGraphs = graphs.filter(graph => !graph.isLive);
+  const timelineNodeLabels = new Map(
+    observedTopology
+      ? (snapshot?.nodes ?? []).map(node => [
+          node.id,
+          `${compactAssigneeLabel(node.role, node.assignee)} ${compactRoleLabel(node.role)}`,
+        ])
+      : [],
+  );
 
   function handleGraphSelection(value: string) {
     const graph = graphs.find(item => selectionQuery(item) === value);
@@ -264,7 +288,7 @@ function App() {
                       key={selectionQuery(graph)}
                       value={selectionQuery(graph)}
                     >
-                      {graphOptionLabel(graph)}
+                      {graphOptionLabel(graph, graphs)}
                     </option>
                   ))}
                 </optgroup>
@@ -276,7 +300,7 @@ function App() {
                       key={selectionQuery(graph)}
                       value={selectionQuery(graph)}
                     >
-                      {graphOptionLabel(graph)}
+                      {graphOptionLabel(graph, graphs)}
                     </option>
                   ))}
                 </optgroup>
@@ -296,25 +320,27 @@ function App() {
         >
           {snapshot ? (
             <>
-              <div className="graph-meta">
-                <span>
-                  {snapshot.scopeId} / {snapshot.runId}
-                </span>
-                <span>Sequence {snapshot.sequence}</span>
-              </div>
-              {observedTopology && (
-                <div
-                  className="relationship-notice"
-                  data-testid="relationship-notice"
-                  role="note"
-                >
-                  <strong>Observed topology — relationships unavailable</strong>
-                  <span>
-                    Live agents and statuses are observed directly. An exact
-                    custom topology is required to draw workflow relationships.
+              <div className="graph-overlay">
+                <div className="graph-meta">
+                  <span title={`${snapshot.scopeId} / ${snapshot.runId}`}>
+                    {snapshot.scopeId} / {snapshot.runId}
                   </span>
+                  <span>Sequence {snapshot.sequence}</span>
                 </div>
-              )}
+                {observedTopology && (
+                  <div
+                    className="relationship-notice"
+                    data-testid="relationship-notice"
+                    role="note"
+                  >
+                    <strong>Observed topology — relationships unavailable</strong>
+                    <span>
+                      Live agents and statuses are observed directly. An exact
+                      custom topology is required to draw workflow relationships.
+                    </span>
+                  </div>
+                )}
+              </div>
               <ReactFlow
                 key={`${snapshot.scopeId}\u001f${snapshot.runId}\u001f${responsiveGraphMode}`}
                 nodes={nodes}
@@ -323,7 +349,7 @@ function App() {
                 edgeTypes={edgeTypes}
                 fitView
                 fitViewOptions={initialFitView}
-                minZoom={0.2}
+                minZoom={minimumReadableZoom}
                 maxZoom={1.5}
                 nodesDraggable={false}
                 nodesConnectable={false}
@@ -388,6 +414,7 @@ function App() {
                 <TimelineItem
                   key={`${eventValue(event, 'id') || 'event'}-${index}`}
                   event={event}
+                  nodeLabel={timelineNodeLabels.get(eventValue(event, 'nodeId'))}
                 />
               ))
             )}
@@ -404,13 +431,20 @@ function App() {
   );
 }
 
-function TimelineItem({event}: {event: GraphEvent}) {
+function TimelineItem({
+  event,
+  nodeLabel,
+}: {
+  event: GraphEvent;
+  nodeLabel?: string;
+}) {
   const label =
     eventValue(event, 'message') ||
     eventValue(event, 'label') ||
     eventValue(event, 'type') ||
     'Graph event';
-  const node = eventValue(event, 'nodeId') || eventValue(event, 'node');
+  const node =
+    nodeLabel || eventValue(event, 'nodeId') || eventValue(event, 'node');
   const at = eventValue(event, 'at');
 
   return (

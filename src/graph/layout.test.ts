@@ -262,6 +262,32 @@ describe('live graph selection', () => {
     );
   });
 
+  test('disambiguates colliding short names with the shortest unique run suffix', () => {
+    const collisions: GraphSummary[] = [
+      {
+        ...summaries[1],
+        spaceName: 'herdr-orchestrator',
+        scopeId: 'herdr:wK',
+        runId: 'functional-qc-custom-g1-fixture',
+        shortName: 'g1-fixture',
+        runStatus: 'PENDING',
+      },
+      {
+        ...summaries[1],
+        spaceName: 'herdr-orchestrator',
+        scopeId: 'herdr:wK',
+        runId: 'functional-qc-manifestless-g1-fixture',
+        shortName: 'g1-fixture',
+        runStatus: 'PENDING',
+      },
+    ];
+
+    expect(collisions.map(graph => graphOptionLabel(graph, collisions))).toEqual([
+      'PENDING · herdr-orchestrator · custom-g1-fixture',
+      'PENDING · herdr-orchestrator · manifestless-g1-fixture',
+    ]);
+  });
+
   test('does not replace a missing complete URL key with the newest graph', () => {
     const missing = {scopeId: 'scope:missing', runId: 'run/missing'};
 

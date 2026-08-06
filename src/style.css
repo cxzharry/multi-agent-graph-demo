@@ -164,6 +164,7 @@ select {
   gap: 16px;
   max-width: 1680px;
   margin: 0 auto;
+  align-items: start;
 }
 
 .graph-panel,
@@ -179,14 +180,25 @@ select {
   overflow: hidden;
 }
 
-.graph-meta {
+.graph-overlay {
   position: absolute;
   z-index: 5;
   top: 14px;
   left: 14px;
+  right: 14px;
   display: flex;
-  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   pointer-events: none;
+}
+
+.graph-meta {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 .graph-meta span {
@@ -197,15 +209,19 @@ select {
   background: rgb(17 21 26 / 88%);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10px;
+  white-space: nowrap;
+}
+
+.graph-meta span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .relationship-notice {
-  position: absolute;
-  z-index: 5;
-  top: 14px;
-  right: 14px;
   display: flex;
+  width: min(320px, 100%);
   max-width: 320px;
+  flex: 0 1 320px;
   flex-direction: column;
   gap: 3px;
   padding: 8px 11px;
@@ -270,6 +286,8 @@ select {
   padding: 18px;
   overflow: hidden;
   flex-direction: column;
+  height: 720px;
+  max-height: 720px;
 }
 
 .timeline-heading {
@@ -334,6 +352,7 @@ select {
   margin-top: 14px;
   overflow-x: hidden;
   overflow-y: auto;
+  flex: 1;
 }
 
 .timeline-item {
@@ -651,6 +670,7 @@ select {
   }
 
   .timeline-panel {
+    height: 420px;
     max-height: 420px;
   }
 }
@@ -666,6 +686,17 @@ select {
 
   .graph-panel {
     height: 600px;
+  }
+
+  .graph-overlay {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .relationship-notice {
+    width: 100%;
+    max-width: none;
+    flex-basis: auto;
   }
 
   .role-node {
