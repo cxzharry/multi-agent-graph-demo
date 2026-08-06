@@ -551,7 +551,7 @@ def _shell_ready(info: dict[str, Any]) -> bool:
         argv = shlex.split(command)
     except ValueError:
         return False
-    return bool(argv) and Path(argv[0]).name == "zsh"
+    return bool(argv) and Path(argv[0]).name.removeprefix("-") == "zsh"
 
 
 def _snapshot(port: int, scope_id: str, run_id: str) -> dict[str, Any] | None:

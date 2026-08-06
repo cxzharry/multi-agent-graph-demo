@@ -634,6 +634,22 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
         with mock.patch.object(launcher, "_herdr", return_value=response):
             launcher._wait_for_shell("server", timeout=0.1)
 
+    def test_wait_for_shell_accepts_login_shell_process(self):
+        launcher = self.require_launcher()
+        response = {
+            "result": {
+                "process_info": {
+                    "shell_pid": 4312,
+                    "foreground_process_group_id": 4312,
+                    "foreground_processes": [
+                        {"pid": 4312, "cmdline": "-zsh"}
+                    ],
+                }
+            }
+        }
+        with mock.patch.object(launcher, "_herdr", return_value=response):
+            launcher._wait_for_shell("server", timeout=0.1)
+
     def test_wait_for_shell_rejects_transient_or_arbitrary_same_group_processes(self):
         launcher = self.require_launcher()
         cases = (
