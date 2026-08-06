@@ -189,16 +189,27 @@ const temporaryDirectory = await mkdtemp(
 const dataFile = path.join(temporaryDirectory, 'snapshots.jsonl');
 const port = await reservePort();
 const baseUrl = `http://127.0.0.1:${port}`;
-const serverProcess = spawn(process.execPath, ['server.js'], {
-  cwd: repositoryRoot,
-  env: {
-    ...process.env,
-    HOST: '127.0.0.1',
-    PORT: String(port),
-    ROLE_GRAPH_DATA_FILE: dataFile,
+const runtimeFingerprint = 'browser-smoke-runtime';
+const serverProcess = spawn(
+  process.execPath,
+  [
+    'server.js',
+    '--port',
+    String(port),
+    '--runtime-fingerprint',
+    runtimeFingerprint,
+  ],
+  {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      HOST: '127.0.0.1',
+      PORT: String(port),
+      ROLE_GRAPH_DATA_FILE: dataFile,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
   },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
+);
 let serverOutput = '';
 serverProcess.stdout.on('data', chunk => {
   serverOutput += chunk;
@@ -210,6 +221,10 @@ serverProcess.stderr.on('data', chunk => {
 let browser;
 try {
   await waitForServer(baseUrl);
+  const healthResponse = await fetch(`${baseUrl}/api/health`);
+  assert.equal(healthResponse.status, 200);
+  const health = await healthResponse.json();
+  assert.equal(health.runtimeFingerprint, runtimeFingerprint);
   browser = await chromium.launch({headless: true});
   const page = await browser.newPage({viewport: {width: 1440, height: 1000}});
 

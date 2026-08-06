@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shlex
@@ -14,6 +15,7 @@ import urllib.parse
 import urllib.request
 import fcntl
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, NamedTuple
 
@@ -57,6 +59,65 @@ class P1Identity(NamedTuple):
 class ManifestSelection(NamedTuple):
     mode: str
     path: Path | None
+
+
+@dataclass(frozen=True)
+class ProcessMatch:
+    pane_id: str | None
+    status: str
+
+    def __bool__(self) -> bool:
+        return self.status == "reusable"
+
+
+def _content_fingerprint(repo: Path, relative_paths: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for relative in sorted(relative_paths, key=lambda value: value.as_posix()):
+        path = repo / relative
+        if not path.is_file():
+            raise LauncherError("missing_viewer", f"Missing runtime file: {path}")
+        digest.update(relative.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def publisher_runtime_fingerprint(repo: Path) -> str:
+    adapter_root = repo / "adapters/herdr"
+    paths = [
+        path.relative_to(repo)
+        for path in adapter_root.glob("*.py")
+        if path.is_file() and not path.name.startswith("test_")
+    ]
+    if not paths:
+        raise LauncherError(
+            "missing_viewer", f"Missing publisher runtime: {adapter_root}"
+        )
+    return _content_fingerprint(repo, paths)
+
+
+def viewer_runtime_fingerprint(repo: Path) -> str:
+    required = {
+        Path("server.js"),
+        Path("index.html"),
+        Path("package.json"),
+        Path("package-lock.json"),
+    }
+    patterns = (
+        "server/**/*.js",
+        "shared/**/*.js",
+        "src/**/*",
+        "vite.config.*",
+        "tsconfig*.json",
+    )
+    discovered = {
+        path.relative_to(repo)
+        for pattern in patterns
+        for path in repo.glob(pattern)
+        if path.is_file()
+    }
+    return _content_fingerprint(repo, list(required | discovered))
 
 
 def _load_state(path: Path, workspace_id: str) -> SelectedState:
@@ -124,7 +185,7 @@ def select_state(
     return matches[0] if len(matches) == 1 else None
 
 
-def probe_viewer(port: int) -> str:
+def probe_viewer(port: int, expected_runtime_fingerprint: str | None = None) -> str:
     url = f"http://127.0.0.1:{port}/api/health"
     try:
         with urllib.request.urlopen(url, timeout=0.5) as response:
@@ -139,7 +200,11 @@ def probe_viewer(port: int) -> str:
             and "space-name-summary" in capabilities
             and "session-presence" in capabilities
         ):
-            return "viewer"
+            if expected_runtime_fingerprint is None:
+                return "viewer"
+            if data.get("runtimeFingerprint") == expected_runtime_fingerprint:
+                return "viewer-current"
+            return "viewer-stale"
         return "occupied"
     except urllib.error.URLError as error:
         reason = error.reason
@@ -232,7 +297,9 @@ def publisher_matches(
     space_name: str,
     endpoint: str,
     watch: bool,
-) -> bool:
+    expected_runtime_fingerprint: str | None = None,
+) -> ProcessMatch:
+    status = "missing"
     for argv in _publisher_argvs(process_info):
         if not _publisher_common_matches(
             argv, state_path, workspace_id, space_name, endpoint, watch
@@ -241,15 +308,29 @@ def publisher_matches(
         manifest_path = _argv_value(argv, "--manifest")
         synthetic = "--synthesize" in argv
         if selection.mode == "synthetic" and synthetic and manifest_path is None:
-            return True
+            status = (
+                "reusable"
+                if expected_runtime_fingerprint is None
+                or _argv_value(argv, "--runtime-fingerprint")
+                == expected_runtime_fingerprint
+                else "stale"
+            )
         if (
             selection.mode == "custom"
             and selection.path is not None
             and not synthetic
             and manifest_path == str(selection.path)
         ):
-            return True
-    return False
+            status = (
+                "reusable"
+                if expected_runtime_fingerprint is None
+                or _argv_value(argv, "--runtime-fingerprint")
+                == expected_runtime_fingerprint
+                else "stale"
+            )
+        if status == "reusable":
+            break
+    return ProcessMatch(None, status)
 
 
 def session_publisher_matches(
@@ -260,7 +341,9 @@ def session_publisher_matches(
     p1_pane_id: str,
     endpoint: str,
     watch: bool,
-) -> bool:
+    expected_runtime_fingerprint: str | None = None,
+) -> ProcessMatch:
+    status = "missing"
     for argv in _publisher_argvs(process_info):
         if (
             any(item.endswith("adapters/herdr/session_publisher.py") for item in argv)
@@ -271,8 +354,16 @@ def session_publisher_matches(
             and _argv_value(argv, "--endpoint") == endpoint
             and ("--watch" in argv) is watch
         ):
-            return True
-    return False
+            status = (
+                "reusable"
+                if expected_runtime_fingerprint is None
+                or _argv_value(argv, "--runtime-fingerprint")
+                == expected_runtime_fingerprint
+                else "stale"
+            )
+            if status == "reusable":
+                break
+    return ProcessMatch(None, status)
 
 
 def _publisher_matches_state(
@@ -412,13 +503,28 @@ def _run_in_pane(pane_id: str, command: str) -> None:
     _herdr("pane", "run", pane_id, command)
 
 
-def _wait_for_viewer(port: int, timeout: float = 60.0) -> None:
+def _wait_for_viewer(
+    port: int, expected_runtime_fingerprint: str, timeout: float = 60.0
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if probe_viewer(port) == "viewer":
+        if probe_viewer(port, expected_runtime_fingerprint) == "viewer-current":
             return
         time.sleep(0.25)
     raise LauncherError("viewer_start_failed", f"Viewer did not start on port {port}")
+
+
+def _wait_for_shell(pane_id: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        response = _herdr("pane", "process-info", "--pane", pane_id)
+        info = _result_value(response, "process_info") or {}
+        if isinstance(info, dict) and info.get("foreground_processes") == []:
+            return
+        time.sleep(0.1)
+    raise LauncherError(
+        "process_stop_failed", f"Pane {pane_id} did not return to its shell"
+    )
 
 
 def _snapshot(port: int, scope_id: str, run_id: str) -> dict[str, Any] | None:
@@ -439,6 +545,8 @@ def _wait_for_snapshot(
     run_id: str,
     expected_sequence: int | None,
     expected_space_name: str,
+    expected_publisher_fingerprint: str | None = None,
+    minimum_sequence_exclusive: int | None = None,
     timeout: float = 20.0,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
@@ -453,6 +561,18 @@ def _wait_for_snapshot(
                 or value.get("sequence") == expected_sequence
             )
             and value.get("spaceName") == expected_space_name
+            and (
+                expected_publisher_fingerprint is None
+                or value.get("publisherFingerprint")
+                == expected_publisher_fingerprint
+            )
+            and (
+                minimum_sequence_exclusive is None
+                or (
+                    isinstance(value.get("sequence"), int)
+                    and value["sequence"] > minimum_sequence_exclusive
+                )
+            )
         ):
             return value
         time.sleep(0.25)
@@ -469,18 +589,128 @@ def _workspace_panes(workspace_id: str) -> list[dict[str, Any]]:
     return panes if isinstance(panes, list) else []
 
 
+def _legacy_server_pane(
+    workspace_id: str,
+    repo: Path,
+    panes: list[dict[str, Any]],
+    process_info: Callable[[str], dict[str, Any]],
+) -> str | None:
+    candidates: list[str] = []
+    for pane in panes:
+        pane_id = pane.get("pane_id")
+        if (
+            not isinstance(pane_id, str)
+            or isinstance(pane.get("agent"), str)
+            or pane.get("label") != "graph-viewer-server"
+        ):
+            continue
+        info = process_info(pane_id)
+        foreground = info.get("foreground_processes")
+        if not isinstance(foreground, list):
+            continue
+        cwd = info.get("cwd")
+        if cwd != str(repo):
+            continue
+        if any(
+            isinstance(process, dict)
+            and isinstance(process.get("cmdline"), str)
+            and "server.js" in shlex.split(process["cmdline"])
+            for process in foreground
+        ):
+            candidates.append(pane_id)
+    if len(candidates) > 1:
+        raise LauncherError(
+            "ambiguous_stale_server",
+            f"Multiple legacy graph-viewer-server panes in workspace {workspace_id}",
+        )
+    return candidates[0] if candidates else None
+
+
+def _pane_process_info(pane_id: str) -> dict[str, Any]:
+    response = _herdr("pane", "process-info", "--pane", pane_id)
+    info = _result_value(response, "process_info") or {}
+    return info if isinstance(info, dict) else {}
+
+
+def _stale_server_pane(
+    workspace_id: str, repo: Path, port: int, panes: list[dict[str, Any]]
+) -> str | None:
+    process_infos: dict[str, dict[str, Any]] = {}
+    managed: list[str] = []
+    for pane in panes:
+        pane_id = pane.get("pane_id")
+        if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
+            continue
+        info = _pane_process_info(pane_id)
+        process_infos[pane_id] = info
+        if info.get("cwd") != str(repo):
+            continue
+        for argv in _publisher_argvs(info):
+            if (
+                _argv_value(argv, "--port") == str(port)
+                and ("server.js" in argv or "npm" in argv and "server" in argv)
+            ):
+                managed.append(pane_id)
+                break
+    if len(managed) > 1:
+        raise LauncherError(
+            "ambiguous_stale_server",
+            f"Multiple graph-viewer-server panes in workspace {workspace_id} for port {port}",
+        )
+    if managed:
+        return managed[0]
+    return _legacy_server_pane(
+        workspace_id,
+        repo,
+        panes,
+        lambda pane_id: process_infos.get(pane_id) or _pane_process_info(pane_id),
+    )
+
+
+def _select_server(
+    workspace_id: str,
+    repo: Path,
+    expected_runtime_fingerprint: str,
+    port_start: int,
+    port_end: int,
+) -> tuple[int, ProcessMatch]:
+    first_free: int | None = None
+    panes: list[dict[str, Any]] | None = None
+    for port in range(port_start, port_end + 1):
+        status = probe_viewer(port, expected_runtime_fingerprint)
+        if status == "viewer-current":
+            return port, ProcessMatch(None, "reusable")
+        if status == "viewer-stale":
+            if panes is None:
+                panes = _workspace_panes(workspace_id)
+            pane_id = _stale_server_pane(workspace_id, repo, port, panes)
+            if pane_id is not None:
+                return port, ProcessMatch(pane_id, "stale")
+        elif status == "free" and first_free is None:
+            first_free = port
+    if first_free is not None:
+        return first_free, ProcessMatch(None, "missing")
+    raise LauncherError(
+        "no_port",
+        f"No current viewer, recoverable stale viewer, or free localhost port in "
+        f"{port_start}-{port_end}",
+    )
+
+
 def _find_publisher(
     workspace_id: str,
     space_name: str,
     state_path: Path,
     selection: ManifestSelection,
     endpoint: str,
-) -> str | None:
+    expected_runtime_fingerprint: str,
+) -> ProcessMatch:
     for _ in range(2):
         stale_seen = False
+        stale_pane: str | None = None
         for pane in _workspace_panes(workspace_id):
             pane_id = pane.get("pane_id")
-            if not isinstance(pane_id, str):
+            if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
                 continue
             try:
                 response = _herdr("pane", "process-info", "--pane", pane_id)
@@ -494,7 +724,7 @@ def _find_publisher(
             info = _result_value(response, "process_info") or {}
             if not isinstance(info, dict):
                 continue
-            if publisher_matches(
+            match = publisher_matches(
                 info,
                 str(state_path),
                 selection,
@@ -502,16 +732,22 @@ def _find_publisher(
                 space_name,
                 endpoint,
                 True,
-            ):
-                return pane_id
+                expected_runtime_fingerprint,
+            )
+            if match.status == "reusable":
+                return ProcessMatch(pane_id, "reusable")
+            if match.status == "stale":
+                stale_pane = pane_id
+        if stale_pane is not None:
+            return ProcessMatch(stale_pane, "stale")
         if not stale_seen:
             break
-    return None
+    return ProcessMatch(None, "missing")
 
 
 def _find_publisher_for_state(
     workspace_id: str, state_path: Path, endpoint: str
-) -> str | None:
+) -> ProcessMatch:
     for pane in _workspace_panes(workspace_id):
         pane_id = pane.get("pane_id")
         if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
@@ -528,8 +764,8 @@ def _find_publisher_for_state(
         if isinstance(info, dict) and _publisher_matches_state(
             info, str(state_path), workspace_id, endpoint, True
         ):
-            return pane_id
-    return None
+            return ProcessMatch(pane_id, "stale")
+    return ProcessMatch(None, "missing")
 
 
 def _find_session_publisher(
@@ -538,7 +774,9 @@ def _find_session_publisher(
     p1_session_id: str,
     p1_pane_id: str,
     endpoint: str,
-) -> str | None:
+    expected_runtime_fingerprint: str,
+) -> ProcessMatch:
+    stale_pane: str | None = None
     for pane in _workspace_panes(workspace_id):
         pane_id = pane.get("pane_id")
         if not isinstance(pane_id, str) or isinstance(pane.get("agent"), str):
@@ -552,17 +790,22 @@ def _find_session_publisher(
                 continue
             raise
         info = _result_value(response, "process_info") or {}
-        if isinstance(info, dict) and session_publisher_matches(
-            info,
-            workspace_id,
-            space_name,
-            p1_session_id,
-            p1_pane_id,
-            endpoint,
-            True,
-        ):
-            return pane_id
-    return None
+        if isinstance(info, dict):
+            match = session_publisher_matches(
+                info,
+                workspace_id,
+                space_name,
+                p1_session_id,
+                p1_pane_id,
+                endpoint,
+                True,
+                expected_runtime_fingerprint,
+            )
+            if match.status == "reusable":
+                return ProcessMatch(pane_id, "reusable")
+            if match.status == "stale":
+                stale_pane = pane_id
+    return ProcessMatch(stale_pane, "stale" if stale_pane else "missing")
 
 
 def _manifest_object(value: Any, path: str) -> dict[str, Any]:
@@ -742,6 +985,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
         raise LauncherError("missing_viewer", f"Viewer repo is incomplete: {repo}")
 
     with _workspace_launch_lock(args.runs_root, workspace_id):
+        publisher_fingerprint = publisher_runtime_fingerprint(repo)
+        viewer_fingerprint = viewer_runtime_fingerprint(repo)
         current_p1: P1Identity | None = None
         if args.state is not None:
             selected = select_state(
@@ -796,38 +1041,76 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             )
         space_name = _resolve_space_name(workspace_id)
         scope_id = f"herdr:{workspace_id}"
-        port, server_reused = select_port(probe_viewer, args.port_start, args.port_end)
-        server_pane: str | None = None
+        port, server_match = _select_server(
+            workspace_id,
+            repo,
+            viewer_fingerprint,
+            args.port_start,
+            args.port_end,
+        )
+        server_reused = server_match.status == "reusable"
+        server_replaced = server_match.status == "stale"
+        server_pane = server_match.pane_id
         endpoint = f"http://127.0.0.1:{port}/api/snapshots"
-        replace_current = False
         if session_mode:
-            publisher_pane = _find_session_publisher(
+            publisher_match = _find_session_publisher(
                 workspace_id,
                 space_name,
                 p1_session_id,
                 p1_pane,
                 endpoint,
+                publisher_fingerprint,
             )
         else:
-            publisher_pane = _find_publisher(
-                workspace_id, space_name, selected.path, selection, endpoint
+            publisher_match = _find_publisher(
+                workspace_id,
+                space_name,
+                selected.path,
+                selection,
+                endpoint,
+                publisher_fingerprint,
             )
-            if publisher_pane is None:
-                publisher_pane = _find_publisher_for_state(
+            if publisher_match.status == "missing":
+                publisher_match = _find_publisher_for_state(
                     workspace_id, selected.path, endpoint
                 )
-                replace_current = publisher_pane is not None
-        publisher_reused = publisher_pane is not None and not replace_current
-        replace_equal_sequence = replace_current or not server_reused
+        publisher_reused = publisher_match.status == "reusable"
+        publisher_replaced = publisher_match.status == "stale"
+        publisher_pane = publisher_match.pane_id
+
+        prior_snapshot = _snapshot(port, scope_id, run_id)
+        prior_sequence = None
+        if (
+            prior_snapshot
+            and prior_snapshot.get("scopeId") == scope_id
+            and prior_snapshot.get("runId") == run_id
+            and isinstance(prior_snapshot.get("sequence"), int)
+        ):
+            prior_sequence = prior_snapshot["sequence"]
+        replace_equal_sequence = (
+            publisher_replaced
+            or not server_reused
+            or (revision is not None and prior_sequence == revision)
+        )
+
+        if publisher_replaced:
+            assert publisher_pane is not None
+            _herdr("pane", "send-keys", publisher_pane, "ctrl+c")
+            _wait_for_shell(publisher_pane)
+        if server_replaced:
+            assert server_pane is not None
+            _herdr("pane", "send-keys", server_pane, "ctrl+c")
+            _wait_for_shell(server_pane)
 
         if not server_reused:
-            server_pane = _split_pane(
-                p1_pane,
-                repo,
-                "graph-viewer-server",
-                direction="right",
-                ratio="0.32",
-            )
+            if server_pane is None:
+                server_pane = _split_pane(
+                    p1_pane,
+                    repo,
+                    "graph-viewer-server",
+                    direction="right",
+                    ratio="0.32",
+                )
             data_file = (
                 args.runs_root.expanduser() / workspace_id / "viewer" / "snapshots.jsonl"
             )
@@ -840,17 +1123,17 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     "npm run build",
                     (
                         f"HOST=127.0.0.1 PORT={port} "
-                        f"ROLE_GRAPH_DATA_FILE={shlex.quote(str(data_file))} npm run server"
+                        f"ROLE_GRAPH_DATA_FILE={shlex.quote(str(data_file))} "
+                        f"npm run server -- --port {port} "
+                        f"--runtime-fingerprint {viewer_fingerprint}"
                     ),
                 ]
             )
             _run_in_pane(server_pane, server_command)
-            _wait_for_viewer(port)
+            _wait_for_viewer(port, viewer_fingerprint)
 
         if not publisher_reused:
-            if replace_current:
-                _herdr("pane", "send-keys", publisher_pane, "ctrl+c")
-            else:
+            if publisher_pane is None:
                 anchor_pane = server_pane or p1_pane
                 publisher_pane = _split_pane(
                     anchor_pane,
@@ -874,6 +1157,10 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     p1_pane,
                     "--endpoint",
                     endpoint,
+                    "--runtime-fingerprint",
+                    publisher_fingerprint,
+                    "--sequence-floor",
+                    str((prior_sequence or 0) + 1),
                     "--watch",
                     "--interval",
                     "2",
@@ -898,6 +1185,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     space_name,
                     "--endpoint",
                     endpoint,
+                    "--runtime-fingerprint",
+                    publisher_fingerprint,
                     "--watch",
                     "--interval",
                     "2",
@@ -909,7 +1198,17 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             _run_in_pane(publisher_pane, command)
 
         snapshot = _wait_for_snapshot(
-            port, scope_id, run_id, revision, space_name
+            port,
+            scope_id,
+            run_id,
+            revision,
+            space_name,
+            expected_publisher_fingerprint=publisher_fingerprint,
+            minimum_sequence_exclusive=(
+                prior_sequence
+                if session_mode and not publisher_reused and prior_sequence is not None
+                else None
+            ),
         )
     return {
         "status": "ready",
@@ -925,8 +1224,19 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "url": viewer_url(port, scope_id, run_id),
         "sequence": snapshot.get("sequence"),
-        "server": {"port": port, "pane_id": server_pane, "reused": server_reused},
-        "publisher": {"pane_id": publisher_pane, "reused": publisher_reused},
+        "viewerFingerprint": viewer_fingerprint,
+        "publisherFingerprint": publisher_fingerprint,
+        "server": {
+            "port": port,
+            "pane_id": server_pane,
+            "reused": server_reused,
+            "replaced": server_replaced,
+        },
+        "publisher": {
+            "pane_id": publisher_pane,
+            "reused": publisher_reused,
+            "replaced": publisher_replaced,
+        },
     }
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
 import threading
 import tempfile
 import unittest
@@ -20,8 +21,502 @@ def load_launcher():
     spec = importlib.util.spec_from_file_location("start_viewer", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+class RuntimeFingerprintTest(unittest.TestCase):
+    def setUp(self):
+        self.launcher = load_launcher()
+
+    def require_launcher(self):
+        self.assertIsNotNone(self.launcher, "start_viewer.py is missing")
+        return self.launcher
+
+    def write_runtime_tree(self, repo: Path) -> None:
+        files = {
+            "adapters/herdr/__init__.py": "",
+            "adapters/herdr/observed_events.py": "EVENT_LIMIT = 64\n",
+            "adapters/herdr/publisher.py": "def publish(): pass\n",
+            "adapters/herdr/session_publisher.py": "def publish(): pass\n",
+            "adapters/herdr/test_publisher.py": "TEST_ONLY = True\n",
+            "server.js": "import './server/app.js';\n",
+            "server/app.js": "export const app = {};\n",
+            "shared/protocol.js": "export const schema = 'role-graph/v1';\n",
+            "src/main.tsx": "export const main = true;\n",
+            "src/styles.css": "body {}\n",
+            "index.html": "<div id='root'></div>\n",
+            "vite.config.ts": "export default {};\n",
+            "tsconfig.json": "{}\n",
+            "package.json": "{}\n",
+            "package-lock.json": "{}\n",
+            "docs/design.md": "ignored\n",
+            "tests/server.test.js": "ignored\n",
+            "dist/index.html": "ignored\n",
+            "node_modules/pkg/index.js": "ignored\n",
+        }
+        for relative, contents in files.items():
+            path = repo / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(contents, encoding="utf-8")
+
+    def test_publisher_fingerprint_is_deterministic_and_runtime_only(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.write_runtime_tree(repo)
+
+            first = launcher.publisher_runtime_fingerprint(repo)
+            self.assertEqual(first, launcher.publisher_runtime_fingerprint(repo))
+            (repo / "README.md").write_text("docs changed", encoding="utf-8")
+            (repo / "adapters/herdr/test_publisher.py").write_text(
+                "TEST_ONLY = False\n", encoding="utf-8"
+            )
+            self.assertEqual(first, launcher.publisher_runtime_fingerprint(repo))
+
+            (repo / "adapters/herdr/observed_events.py").write_text(
+                "EVENT_LIMIT = 65\n", encoding="utf-8"
+            )
+            self.assertNotEqual(first, launcher.publisher_runtime_fingerprint(repo))
+
+    def test_publisher_fingerprint_changes_when_runtime_helper_is_renamed(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.write_runtime_tree(repo)
+            helper = repo / "adapters/herdr/observed_events.py"
+            first = launcher.publisher_runtime_fingerprint(repo)
+
+            helper.rename(helper.with_name("event_ledger.py"))
+
+            self.assertNotEqual(first, launcher.publisher_runtime_fingerprint(repo))
+
+    def test_viewer_fingerprint_covers_runtime_and_build_inputs_only(self):
+        launcher = self.require_launcher()
+        runtime_paths = (
+            "server.js",
+            "server/app.js",
+            "shared/protocol.js",
+            "src/main.tsx",
+            "src/styles.css",
+            "index.html",
+            "vite.config.ts",
+            "tsconfig.json",
+            "package.json",
+            "package-lock.json",
+        )
+        ignored_paths = (
+            "docs/design.md",
+            "tests/server.test.js",
+            "dist/index.html",
+            "node_modules/pkg/index.js",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.write_runtime_tree(repo)
+            first = launcher.viewer_runtime_fingerprint(repo)
+
+            for relative in ignored_paths:
+                path = repo / relative
+                path.write_text(path.read_text(encoding="utf-8") + "ignored\n", encoding="utf-8")
+            self.assertEqual(first, launcher.viewer_runtime_fingerprint(repo))
+
+            for relative in runtime_paths:
+                with self.subTest(relative=relative):
+                    original = repo / relative
+                    contents = original.read_text(encoding="utf-8")
+                    original.write_text(contents + "runtime-change\n", encoding="utf-8")
+                    self.assertNotEqual(first, launcher.viewer_runtime_fingerprint(repo))
+                    original.write_text(contents, encoding="utf-8")
+
+
+class RuntimeRecoveryContractTest(unittest.TestCase):
+    def setUp(self):
+        self.launcher = load_launcher()
+
+    def require_launcher(self):
+        self.assertIsNotNone(self.launcher, "start_viewer.py is missing")
+        return self.launcher
+
+    def test_publisher_classification_requires_current_fingerprint(self):
+        launcher = self.require_launcher()
+        state = "/tmp/run/workspace-state.json"
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+
+        def process(fingerprint: str | None):
+            fingerprint_arg = (
+                f" --runtime-fingerprint {fingerprint}" if fingerprint else ""
+            )
+            return {
+                "foreground_processes": [
+                    {
+                        "cmdline": (
+                            "python3 -B adapters/herdr/publisher.py "
+                            f"--state {state} --synthesize --workspace-id w1 "
+                            "--space-name graph-runtime "
+                            f"--endpoint {endpoint} --watch{fingerprint_arg}"
+                        )
+                    }
+                ]
+            }
+
+        arguments = (
+            state,
+            launcher.ManifestSelection("synthetic", None),
+            "w1",
+            "graph-runtime",
+            endpoint,
+            True,
+            "publisher-current",
+        )
+        self.assertEqual(
+            launcher.publisher_matches(process("publisher-current"), *arguments).status,
+            "reusable",
+        )
+        self.assertEqual(
+            launcher.publisher_matches(process("publisher-old"), *arguments).status,
+            "stale",
+        )
+        self.assertEqual(
+            launcher.publisher_matches(process(None), *arguments).status,
+            "stale",
+        )
+        self.assertEqual(
+            launcher.publisher_matches(
+                process("publisher-current"),
+                *arguments[:2],
+                "another-workspace",
+                *arguments[3:],
+            ).status,
+            "missing",
+        )
+
+    def test_session_publisher_classification_requires_current_fingerprint(self):
+        launcher = self.require_launcher()
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        base = (
+            "python3 -B adapters/herdr/session_publisher.py "
+            "--workspace-id w1 --space-name graph-runtime "
+            "--p1-session-id run-1 --p1-pane-id w1:p1 "
+            f"--endpoint {endpoint} --watch"
+        )
+
+        current = {
+            "foreground_processes": [
+                {"cmdline": base + " --runtime-fingerprint publisher-current"}
+            ]
+        }
+        legacy = {"foreground_processes": [{"cmdline": base}]}
+        arguments = (
+            "w1",
+            "graph-runtime",
+            "run-1",
+            "w1:p1",
+            endpoint,
+            True,
+            "publisher-current",
+        )
+
+        self.assertEqual(
+            launcher.session_publisher_matches(current, *arguments).status,
+            "reusable",
+        )
+        self.assertEqual(
+            launcher.session_publisher_matches(legacy, *arguments).status,
+            "stale",
+        )
+
+    def test_viewer_probe_requires_exact_runtime_fingerprint(self):
+        launcher = self.require_launcher()
+
+        class Response:
+            def __init__(self, value):
+                self.value = value
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return json.dumps(self.value).encode("utf-8")
+
+        health = {
+            "service": "herdr-role-graph-viewer",
+            "schemaVersion": "role-graph/v1",
+            "capabilities": ["space-name-summary", "session-presence"],
+        }
+        with mock.patch.object(
+            launcher.urllib.request,
+            "urlopen",
+            return_value=Response({**health, "runtimeFingerprint": "viewer-current"}),
+        ):
+            self.assertEqual(
+                launcher.probe_viewer(4173, "viewer-current"), "viewer-current"
+            )
+        for observed in (None, "viewer-old"):
+            with self.subTest(observed=observed), mock.patch.object(
+                launcher.urllib.request,
+                "urlopen",
+                return_value=Response({**health, "runtimeFingerprint": observed}),
+            ):
+                self.assertEqual(
+                    launcher.probe_viewer(4173, "viewer-current"), "viewer-stale"
+                )
+        with mock.patch.object(
+            launcher.urllib.request,
+            "urlopen",
+            return_value=Response(
+                {
+                    "service": "another-service",
+                    "runtimeFingerprint": "viewer-current",
+                }
+            ),
+        ):
+            self.assertEqual(
+                launcher.probe_viewer(4173, "viewer-current"), "occupied"
+            )
+
+    def test_wait_for_snapshot_requires_fingerprint_and_newer_sequence(self):
+        launcher = self.require_launcher()
+        snapshots = iter(
+            [
+                {
+                    "spaceName": "graph-runtime",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 111,
+                    "publisherFingerprint": "publisher-current",
+                },
+                {
+                    "spaceName": "graph-runtime",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 112,
+                    "publisherFingerprint": "publisher-old",
+                },
+                {
+                    "spaceName": "graph-runtime",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 112,
+                    "publisherFingerprint": "publisher-current",
+                },
+            ]
+        )
+        with mock.patch.object(
+            launcher, "_snapshot", side_effect=lambda *_: next(snapshots)
+        ):
+            found = launcher._wait_for_snapshot(
+                4173,
+                "herdr:w1",
+                "run-1",
+                None,
+                "graph-runtime",
+                expected_publisher_fingerprint="publisher-current",
+                minimum_sequence_exclusive=111,
+                timeout=1,
+            )
+
+        self.assertEqual(found["sequence"], 112)
+
+    def test_legacy_server_mapping_is_unambiguous_and_workspace_local(self):
+        launcher = self.require_launcher()
+        repo = Path("/tmp/current-viewer")
+        panes = [
+            {"pane_id": "agent", "label": "graph-viewer-server", "agent": "codex"},
+            {"pane_id": "server", "label": "graph-viewer-server"},
+        ]
+
+        def process_info(pane_id: str):
+            if pane_id == "server":
+                return {
+                    "cwd": str(repo),
+                    "foreground_processes": [{"cmdline": "node server.js"}],
+                }
+            return {
+                "cwd": str(repo),
+                "foreground_processes": [{"cmdline": "node server.js"}],
+            }
+
+        self.assertEqual(
+            launcher._legacy_server_pane("w1", repo, panes, process_info),
+            "server",
+        )
+        with self.assertRaises(launcher.LauncherError) as raised:
+            launcher._legacy_server_pane(
+                "w1",
+                repo,
+                panes + [{"pane_id": "server-2", "label": "graph-viewer-server"}],
+                process_info,
+            )
+        self.assertEqual(raised.exception.code, "ambiguous_stale_server")
+
+    def test_stale_runtimes_stop_and_restart_in_existing_panes(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            RuntimeFingerprintTest().write_runtime_tree(repo)
+            publisher_fingerprint = launcher.publisher_runtime_fingerprint(repo)
+            viewer_fingerprint = launcher.viewer_runtime_fingerprint(repo)
+            endpoint = "http://127.0.0.1:4173/api/snapshots"
+            process_state = {"publisher": "stale", "server": "stale"}
+            commands: dict[str, str] = {}
+            calls: list[tuple[str, ...]] = []
+
+            legacy_publisher = (
+                "python3 -B adapters/herdr/session_publisher.py "
+                "--workspace-id w1 --space-name graph-runtime "
+                "--p1-session-id run-1 --p1-pane-id w1:p1 "
+                f"--endpoint {endpoint} --watch --interval 2"
+            )
+
+            def process_info(pane_id: str):
+                state = process_state[pane_id]
+                if state == "stopped":
+                    return {"cwd": str(repo.resolve()), "foreground_processes": []}
+                if pane_id == "publisher":
+                    command = commands.get(pane_id, legacy_publisher)
+                else:
+                    command = commands.get(pane_id, "node server.js")
+                return {
+                    "cwd": str(repo.resolve()),
+                    "foreground_processes": [{"cmdline": command}],
+                }
+
+            def fake_herdr(*args):
+                calls.append(args)
+                if args[:2] == ("agent", "list"):
+                    return {
+                        "result": {
+                            "agents": [
+                                {
+                                    "workspace_id": "w1",
+                                    "pane_id": "w1:p1",
+                                    "name": "p1_orchestrator",
+                                    "agent_session": {"kind": "id", "value": "run-1"},
+                                }
+                            ]
+                        }
+                    }
+                if args[:2] == ("workspace", "list"):
+                    return {
+                        "result": {
+                            "workspaces": [
+                                {"workspace_id": "w1", "label": "graph-runtime"}
+                            ]
+                        }
+                    }
+                if args[:2] == ("pane", "list"):
+                    return {
+                        "result": {
+                            "panes": [
+                                {"pane_id": "publisher", "label": "graph-viewer-publisher"},
+                                {"pane_id": "server", "label": "graph-viewer-server"},
+                            ]
+                        }
+                    }
+                if args[:2] == ("pane", "process-info"):
+                    return {"result": {"process_info": process_info(args[-1])}}
+                if args[:2] == ("pane", "send-keys"):
+                    process_state[args[2]] = "stopped"
+                    return {"result": {}}
+                if args[:2] == ("pane", "run"):
+                    commands[args[2]] = args[3]
+                    process_state[args[2]] = "current"
+                    return {"result": {}}
+                raise AssertionError(args)
+
+            def fake_probe(_port, expected_fingerprint=None):
+                self.assertIn(expected_fingerprint, (None, viewer_fingerprint))
+                return (
+                    "viewer-current"
+                    if process_state["server"] == "current"
+                    else "viewer-stale"
+                )
+
+            def fake_snapshot(*_):
+                if process_state["publisher"] == "current":
+                    return {
+                        "spaceName": "graph-runtime",
+                        "scopeId": "herdr:w1",
+                        "runId": "run-1",
+                        "sequence": 112,
+                        "publisherFingerprint": publisher_fingerprint,
+                    }
+                return {
+                    "spaceName": "graph-runtime",
+                    "scopeId": "herdr:w1",
+                    "runId": "run-1",
+                    "sequence": 111,
+                }
+
+            args = Namespace(
+                state=None,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(
+                launcher, "_herdr", side_effect=fake_herdr
+            ), mock.patch.object(
+                launcher, "probe_viewer", side_effect=fake_probe
+            ), mock.patch.object(
+                launcher, "_snapshot", side_effect=fake_snapshot
+            ):
+                result = launcher.launch(args)
+
+            publisher_stop = ("pane", "send-keys", "publisher", "ctrl+c")
+            server_stop = ("pane", "send-keys", "server", "ctrl+c")
+            self.assertLess(calls.index(publisher_stop), calls.index(server_stop))
+            server_run = next(
+                call for call in calls if call[:3] == ("pane", "run", "server")
+            )
+            publisher_run = next(
+                call for call in calls if call[:3] == ("pane", "run", "publisher")
+            )
+            self.assertLess(calls.index(server_run), calls.index(publisher_run))
+            self.assertFalse(any(call[:2] == ("pane", "split") for call in calls))
+            self.assertIn(
+                f"npm run server -- --port 4173 --runtime-fingerprint {viewer_fingerprint}",
+                server_run[3],
+            )
+            self.assertIn(
+                f"--runtime-fingerprint {publisher_fingerprint}", publisher_run[3]
+            )
+            self.assertIn("--sequence-floor 112", publisher_run[3])
+            self.assertTrue(result["server"]["replaced"])
+            self.assertTrue(result["publisher"]["replaced"])
+            self.assertEqual(result["viewerFingerprint"], viewer_fingerprint)
+            self.assertEqual(result["publisherFingerprint"], publisher_fingerprint)
+
+    def test_wait_for_shell_is_bounded(self):
+        launcher = self.require_launcher()
+        response = {
+            "result": {
+                "process_info": {
+                    "foreground_processes": [{"cmdline": "node server.js"}]
+                }
+            }
+        }
+        with mock.patch.object(
+            launcher, "_herdr", return_value=response
+        ), self.assertRaises(launcher.LauncherError) as raised:
+            launcher._wait_for_shell("server", timeout=0)
+        self.assertEqual(raised.exception.code, "process_stop_failed")
 
 
 class StartViewerTest(unittest.TestCase):
@@ -31,6 +526,9 @@ class StartViewerTest(unittest.TestCase):
     def require_launcher(self):
         self.assertIsNotNone(self.launcher, "start_viewer.py is missing")
         return self.launcher
+
+    def write_runtime_tree(self, repo: Path) -> None:
+        RuntimeFingerprintTest().write_runtime_tree(repo)
 
     def workspace_list(
         self, workspace: str = "w1", label: str = "herdr-orchestrator"
@@ -123,9 +621,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             manifest = root / "custom-manifest.json"
             manifest.write_text(manifest_contents, encoding="utf-8")
             state = self.write_state(
@@ -175,9 +671,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             state = self.write_state(
                 root,
                 "current",
@@ -223,7 +717,11 @@ class StartViewerTest(unittest.TestCase):
                 port_start=4173,
                 port_end=4173,
             )
-            probe_results = iter(("free", "viewer") if cold_server else ("viewer",))
+            probe_results = iter(
+                ("free", "viewer-current")
+                if cold_server
+                else ("viewer-current",)
+            )
 
             with mock.patch.dict(
                 os.environ,
@@ -236,7 +734,9 @@ class StartViewerTest(unittest.TestCase):
             ), mock.patch.object(
                 launcher.subprocess, "run", side_effect=fake_run
             ), mock.patch.object(
-                launcher, "probe_viewer", side_effect=lambda _port: next(probe_results)
+                launcher,
+                "probe_viewer",
+                side_effect=lambda _port, _fingerprint=None: next(probe_results),
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
@@ -400,9 +900,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             state = self.write_state(
                 root, "current", workspace="w1", pane="w1:p1", run_id="current-run"
             )
@@ -442,9 +940,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             state = self.write_state(
                 root, "current", workspace="w1", pane="w1:p1", run_id="current-run"
             )
@@ -485,7 +981,7 @@ class StartViewerTest(unittest.TestCase):
             ), mock.patch.object(
                 launcher, "_herdr", side_effect=fake_herdr
             ), mock.patch.object(
-                launcher, "probe_viewer", return_value="viewer"
+                launcher, "probe_viewer", return_value="viewer-current"
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
@@ -1052,8 +1548,9 @@ class StartViewerTest(unittest.TestCase):
                     Path(target),
                     launcher.ManifestSelection("custom", Path(manifest)),
                     endpoint,
+                    "publisher-current",
                 ),
-                "publisher",
+                launcher.ProcessMatch("publisher", "stale"),
             )
 
         self.assertIn(("pane", "process-info", "--pane", "stale"), calls)
@@ -1063,9 +1560,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             manifest = root / "role-graph-manifest.json"
             self.write_manifest(manifest)
             state = self.write_state(
@@ -1085,8 +1580,10 @@ class StartViewerTest(unittest.TestCase):
                 f"--endpoint {endpoint} --watch --interval 2"
             )
             calls: list[tuple[str, ...]] = []
+            publisher_stopped = False
 
             def fake_herdr(*args):
+                nonlocal publisher_stopped
                 calls.append(args)
                 if args[:2] == ("workspace", "list"):
                     return self.workspace_list()
@@ -1102,11 +1599,18 @@ class StartViewerTest(unittest.TestCase):
                     return {
                         "result": {
                             "process_info": {
-                                "foreground_processes": [{"cmdline": old_command}]
+                                "foreground_processes": (
+                                    []
+                                    if publisher_stopped
+                                    else [{"cmdline": old_command}]
+                                )
                             }
                         }
                     }
-                if args[:2] in {("pane", "send-keys"), ("pane", "run")}:
+                if args[:2] == ("pane", "send-keys"):
+                    publisher_stopped = True
+                    return {"result": {}}
+                if args[:2] == ("pane", "run"):
                     return {"result": {}}
                 raise AssertionError(args)
 
@@ -1128,7 +1632,7 @@ class StartViewerTest(unittest.TestCase):
                 },
                 clear=True,
             ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
-                launcher, "probe_viewer", return_value="viewer"
+                launcher, "probe_viewer", return_value="viewer-current"
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
@@ -1137,6 +1641,7 @@ class StartViewerTest(unittest.TestCase):
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
+                    "publisherFingerprint": launcher.publisher_runtime_fingerprint(repo),
                 },
             ):
                 result = launcher.launch(args)
@@ -1187,7 +1692,9 @@ class StartViewerTest(unittest.TestCase):
         with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
             found = launcher._find_publisher_for_state("w1", target, endpoint)
 
-        self.assertEqual(found, "publisher-pane")
+        self.assertEqual(
+            found, launcher.ProcessMatch("publisher-pane", "stale")
+        )
         self.assertNotIn(
             ("pane", "process-info", "--pane", "agent-pane"), calls
         )
@@ -1292,12 +1799,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/session_publisher.py").write_text(
-                "", encoding="utf-8"
-            )
+            self.write_runtime_tree(repo)
             calls: list[tuple[str, ...]] = []
             commands: dict[str, str] = {}
 
@@ -1361,16 +1863,25 @@ class StartViewerTest(unittest.TestCase):
             ), mock.patch.object(
                 launcher, "_herdr", side_effect=fake_herdr
             ), mock.patch.object(
-                launcher, "probe_viewer", return_value="viewer"
+                launcher, "probe_viewer", return_value="viewer-current"
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
-                return_value={
-                    "spaceName": "herdr-orchestrator",
-                    "scopeId": "herdr:w1",
-                    "runId": "019fb24f-f36f-7642-8679-5c6405fb3889",
-                    "sequence": 1,
-                },
+                side_effect=[
+                    {
+                        "spaceName": "herdr-orchestrator",
+                        "scopeId": "herdr:w1",
+                        "runId": "019fb24f-f36f-7642-8679-5c6405fb3889",
+                        "sequence": 1,
+                    },
+                    {
+                        "spaceName": "herdr-orchestrator",
+                        "scopeId": "herdr:w1",
+                        "runId": "019fb24f-f36f-7642-8679-5c6405fb3889",
+                        "sequence": 2,
+                        "publisherFingerprint": launcher.publisher_runtime_fingerprint(repo),
+                    },
+                ],
             ):
                 try:
                     result = launcher.launch(args)
@@ -1418,9 +1929,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             manifest = root / "role-graph-manifest.json"
             self.write_manifest(manifest)
             state = self.write_state(
@@ -1484,7 +1993,9 @@ class StartViewerTest(unittest.TestCase):
                 },
                 clear=True,
             ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
-                launcher, "probe_viewer", side_effect=["free", "viewer"]
+                launcher,
+                "probe_viewer",
+                side_effect=["free", "viewer-current"],
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
@@ -1493,6 +2004,7 @@ class StartViewerTest(unittest.TestCase):
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
+                    "publisherFingerprint": launcher.publisher_runtime_fingerprint(repo),
                 },
             ):
                 result = launcher.launch(args)
@@ -1552,9 +2064,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             state = self.write_state(
                 root,
                 "current",
@@ -1597,7 +2107,7 @@ class StartViewerTest(unittest.TestCase):
                 },
                 clear=True,
             ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
-                launcher, "probe_viewer", return_value="viewer"
+                launcher, "probe_viewer", return_value="viewer-current"
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
@@ -1606,6 +2116,7 @@ class StartViewerTest(unittest.TestCase):
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
+                    "publisherFingerprint": launcher.publisher_runtime_fingerprint(repo),
                 },
             ):
                 result = launcher.launch(args)
@@ -1615,16 +2126,14 @@ class StartViewerTest(unittest.TestCase):
             self.assertEqual(len(commands), 1)
             self.assertIn("--synthesize", commands[0])
             self.assertNotIn("--manifest", commands[0])
-            self.assertNotIn("--replace-current", commands[0].split())
+            self.assertIn("--replace-current", commands[0].split())
 
     def test_reused_server_from_non_p1_pane_anchors_unique_controller_p1(self):
         launcher = self.require_launcher()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             manifest = root / "role-graph-manifest.json"
             self.write_manifest(manifest)
             state = self.write_state(
@@ -1684,7 +2193,7 @@ class StartViewerTest(unittest.TestCase):
                 },
                 clear=True,
             ), mock.patch.object(launcher, "_herdr", side_effect=fake_herdr), mock.patch.object(
-                launcher, "probe_viewer", return_value="viewer"
+                launcher, "probe_viewer", return_value="viewer-current"
             ), mock.patch.object(
                 launcher,
                 "_snapshot",
@@ -1693,6 +2202,7 @@ class StartViewerTest(unittest.TestCase):
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
+                    "publisherFingerprint": launcher.publisher_runtime_fingerprint(repo),
                 },
             ):
                 launcher.launch(args)
@@ -1721,9 +2231,7 @@ class StartViewerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo = root / "repo"
-            (repo / "adapters/herdr").mkdir(parents=True)
-            (repo / "server.js").write_text("", encoding="utf-8")
-            (repo / "adapters/herdr/publisher.py").write_text("", encoding="utf-8")
+            self.write_runtime_tree(repo)
             manifest = root / "role-graph-manifest.json"
             self.write_manifest(manifest)
             state = self.write_state(
@@ -1768,10 +2276,10 @@ class StartViewerTest(unittest.TestCase):
                         return {"result": {}}
                 raise AssertionError(args)
 
-            def fake_probe(_port):
+            def fake_probe(_port, _fingerprint=None):
                 with lock:
                     if any("npm run server" in command for command in commands.values()):
-                        return "viewer"
+                        return "viewer-current"
                 return "free"
 
             args = Namespace(
@@ -1784,10 +2292,11 @@ class StartViewerTest(unittest.TestCase):
             )
 
             errors: list[BaseException] = []
+            results: list[dict] = []
 
             def run_launch():
                 try:
-                    launcher.launch(args)
+                    results.append(launcher.launch(args))
                 except BaseException as error:
                     errors.append(error)
 
@@ -1809,6 +2318,7 @@ class StartViewerTest(unittest.TestCase):
                     "scopeId": "herdr:w1",
                     "runId": "current-run",
                     "sequence": 8,
+                    "publisherFingerprint": launcher.publisher_runtime_fingerprint(repo),
                 },
             ):
                 threads = [threading.Thread(target=run_launch) for _ in range(2)]
@@ -1827,6 +2337,13 @@ class StartViewerTest(unittest.TestCase):
             self.assertEqual(len(server_commands), 1)
             self.assertEqual(len(publisher_commands), 1)
             self.assertEqual(len(splits), 2)
+            self.assertEqual(
+                sorted(
+                    (result["server"]["reused"], result["publisher"]["reused"])
+                    for result in results
+                ),
+                [(False, False), (True, True)],
+            )
 
     def test_viewer_url_encodes_scope_and_run(self):
         launcher = self.require_launcher()

@@ -17,7 +17,7 @@ Run:
 python3 -B /Users/haido/.codex/skills/herdr-graph-viewer/scripts/start_viewer.py
 ```
 
-The launcher must run inside Herdr. It resolves only the current workspace and current P1 pane plus full agent session ID. When an exact control state matches both values, it starts or reuses one publisher watcher for that state and topology mode. When none matches, it starts or reuses the exact workspace-local session publisher. It verifies the snapshot and prints JSON containing `url` and `mode`.
+The launcher must run inside Herdr. It resolves only the current workspace and current P1 pane plus full agent session ID. When an exact control state matches both values, it starts or reuses one publisher watcher for that state and topology mode. When none matches, it starts or reuses the exact workspace-local session publisher. It computes deterministic publisher and viewer content fingerprints: current runtimes use the fast reuse path, while stale or unmanaged same-scope runtimes are transparently stopped with a bounded wait and restarted in their existing ordinary panes. It verifies fingerprint-bound server health and a current snapshot, then prints JSON containing `url`, `mode`, fingerprint evidence, and `reused`/`replaced` flags.
 
 Session mode is a supported fallback, not an error. Its full P1 session ID is the hidden run identity; the selector presents the fresh heartbeat under **Active** with the compact name `current`. Persisted runs without fresh presence remain under **History**. Exact `scopeId + runId` values remain visible as graph metadata and routing identity.
 
@@ -41,8 +41,9 @@ Use `--manifest /absolute/path/to/manifest.json` when the selected flow supplies
 - Never inspect, publish, prompt, move, or dispatch into another Herdr workspace.
 - Never modify or sync the viewer repo, `herdr-orchestrator`, or its installed skill.
 - Never close panes. Server and publisher are ordinary command panes, not agents.
-- Reuse a server only when health advertises both `space-name-summary` and `session-presence`; skip dead or incompatible servers without stopping them.
-- Reuse control publishers by exact state and topology mode, and session publishers by exact workspace, space name, P1 pane, P1 session, and endpoint. Replace only a mismatched viewer-owned control publisher in the same ordinary pane.
+- Reuse a server only when health advertises `space-name-summary`, `session-presence`, and the current viewer fingerprint. Skip unrelated or incompatible services without stopping them.
+- Reuse control publishers by exact state, topology mode, and publisher fingerprint, and session publishers by exact workspace, space name, P1 pane, P1 session, endpoint, and fingerprint. Treat legacy/manual processes without a launcher fingerprint as stale, not reusable.
+- Replace only same-scope ordinary viewer panes in the current workspace. Stop stale publishers before stale servers, confirm each pane returns to its shell, then start the server before the publisher. Never stack a replacement over an unconfirmed process.
 - On cold launch, place the server right of P1 and the publisher below the server in that right-side rail. Preserve focus and never create either process below P1.
 - Do not install hooks or stream raw tool activity. Control mode publishes `workspace-state.json` revisions; session mode publishes only workspace-local agent status and presence.
 
@@ -51,8 +52,8 @@ Use `--manifest /absolute/path/to/manifest.json` when the selected flow supplies
 - **Events are bounded lifecycle observations, not raw activity.** Both publishers reuse their existing two-second poll to diff node lifecycle and emit timestamped `NODE_OBSERVED`, `NODE_STATUS_CHANGED`, `NODE_ASSIGNEE_CHANGED`, `NODE_GENERATION_CHANGED`, and `NODE_REMOVED` events. A fresh graph shows one event per current node immediately; unchanged polls add nothing. No prompt, command, tool, token, or session-log activity is streamed, and history stays bounded.
 - **Session and synthetic relationships are unavailable.** These flows observe nodes and statuses but have no trusted workflow-edge source, so they draw no edges, gates, or failure routes. P1 stays in layer 0 and observed agents in layer 1, and the viewer shows a concise `Observed topology — relationships unavailable` notice.
 - **Custom manifests remain the only exact topology source.** A declared manifest keeps its authored nodes, edges, gates, and failure loops byte-for-byte and shows no observed-topology notice.
-- Startup stays explicit: no global hook is installed and the viewer never starts itself.
+- Startup stays explicit and invoke-only: no global hook is installed and the viewer never starts itself. Direct/manual publisher and server processes remain diagnostic `unmanaged` runtimes and cannot satisfy launcher readiness.
 
 ## Verification
 
-Before reporting success, require launcher status `ready`, the expected `mode`, an exact workspace/run match, and a verified snapshot. Report whether server and publisher were started or reused.
+Before reporting success, require launcher status `ready`, the expected `mode`, an exact workspace/run match, current publisher/viewer fingerprints, and a verified snapshot. Report whether server and publisher were started, replaced, or reused.

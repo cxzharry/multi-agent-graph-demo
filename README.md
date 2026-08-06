@@ -48,8 +48,12 @@ The server exposes:
 `GET /api/health` identifies this viewer exactly:
 
 ```json
-{"service":"herdr-role-graph-viewer","schemaVersion":"role-graph/v1"}
+{"service":"herdr-role-graph-viewer","schemaVersion":"role-graph/v1","runtimeFingerprint":"unmanaged"}
 ```
+
+Direct `npm run server` and publisher commands remain available for manual
+diagnosis and report `runtimeFingerprint: "unmanaged"`. Unmanaged processes are
+never considered current by the Herdr launcher.
 
 Example:
 
@@ -78,6 +82,16 @@ python3 -B adapters/herdr/publisher.py \
 The `--workspace-id` value must exactly match the state file. The adapter does
 not discover other workspaces or modify Herdr state. See
 [docs/herdr-adapter.md](docs/herdr-adapter.md) for details.
+
+### Explicit Herdr launcher recovery
+
+The graph viewer remains invoke-only: it never starts from a global hook or as
+a side effect of starting Herdr. An explicit `herdr-graph-viewer` invocation
+hashes the publisher and viewer runtime inputs. Byte-current processes are
+reused; same-scope stale or unmanaged processes are stopped with a bounded wait
+and transparently restarted in their existing ordinary panes. When both are
+stale, the server restarts before the publisher. Recovery is restricted to the
+current Herdr workspace and does not clear valid snapshot or event history.
 
 ### Observed vs declared topology
 
