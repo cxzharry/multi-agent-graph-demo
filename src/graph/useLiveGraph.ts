@@ -69,7 +69,7 @@ export function graphOptionLabel(
     }
   }
 
-  return `${prefix} · ${graph.shortName} · ${graph.scopeId.split(':').slice(-1)[0]}`;
+  return `${prefix} · ${graph.shortName} · ${graph.scopeId}`;
 }
 
 export type ConnectionState =

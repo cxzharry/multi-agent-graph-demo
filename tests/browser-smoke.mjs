@@ -456,6 +456,16 @@ try {
     title: `Selector collision ${index + 1}`,
     nodes: compact.nodes.map(node => ({...node, status: 'pending'})),
   }));
+  const scopeCollisions = ['herdr:wK', 'archive:wK'].map((scopeId, index) => ({
+    ...structuredClone(compact),
+    spaceName: 'herdr-orchestrator',
+    shortName: 'same-run',
+    scopeId,
+    runId: 'same-run',
+    generatedAt: new Date(recentEpochMilliseconds - 6000 - index * 1000).toISOString(),
+    title: `Scope collision ${index + 1}`,
+    nodes: compact.nodes.map(node => ({...node, status: 'pending'})),
+  }));
   const liveDensityNodeIds = Array.from(
     {length: 9},
     (_, index) => `019fd-live-session-${String(index + 1).padStart(2, '0')}-opaque`,
@@ -529,6 +539,7 @@ try {
   await postSnapshot(baseUrl, selectorLayout);
   await postSnapshot(baseUrl, historyHardening);
   for (const collision of selectorCollisions) await postSnapshot(baseUrl, collision);
+  for (const collision of scopeCollisions) await postSnapshot(baseUrl, collision);
   await postSnapshot(baseUrl, liveDensity);
   await postSnapshot(baseUrl, expiringPresence);
   const atTimelineSnapshot = structuredClone(branched);
@@ -863,6 +874,13 @@ try {
     'PENDING · herdr-orchestrator · custom-g1-fixture',
     'PENDING · herdr-orchestrator · manifestless-g1-fixture',
   ]);
+  assert.deepEqual(
+    refreshedOptionLabels.filter(label => label.includes('same-run')),
+    [
+      'PENDING · herdr-orchestrator · same-run · herdr:wK',
+      'PENDING · herdr-orchestrator · same-run · archive:wK',
+    ],
+  );
 
   await selector.selectOption(
     new URLSearchParams({

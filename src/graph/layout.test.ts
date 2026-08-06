@@ -288,6 +288,22 @@ describe('live graph selection', () => {
     ]);
   });
 
+  test('disambiguates identical run labels with the full compact scope id', () => {
+    const collisions: GraphSummary[] = ['herdr:wK', 'archive:wK'].map(scopeId => ({
+      ...summaries[1],
+      spaceName: 'herdr-orchestrator',
+      scopeId,
+      runId: 'same-run',
+      shortName: 'same-run',
+      runStatus: 'PENDING',
+    }));
+
+    expect(collisions.map(graph => graphOptionLabel(graph, collisions))).toEqual([
+      'PENDING · herdr-orchestrator · same-run · herdr:wK',
+      'PENDING · herdr-orchestrator · same-run · archive:wK',
+    ]);
+  });
+
   test('does not replace a missing complete URL key with the newest graph', () => {
     const missing = {scopeId: 'scope:missing', runId: 'run/missing'};
 
