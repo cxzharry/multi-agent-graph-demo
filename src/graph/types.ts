@@ -8,7 +8,18 @@ export type NodeStatus =
   | 'stale'
   | 'skipped';
 
-export type EdgeKind = 'forward' | 'return';
+export type AgentLiveness = 'running' | 'idle' | 'offline' | 'stale';
+
+export type AssignmentResult =
+  | 'pass'
+  | 'fail'
+  | 'blocked'
+  | 'skipped'
+  | 'rework';
+
+export type RelationshipMode = 'declared' | 'event-backed' | 'unavailable';
+
+export type EdgeKind = 'forward' | 'return' | 'control';
 
 export type EdgeStatus =
   | 'pending'
@@ -27,6 +38,9 @@ export type RoleNode = {
   assignee: string;
   layer?: number;
   status: NodeStatus;
+  liveness?: AgentLiveness;
+  result?: AssignmentResult;
+  lastActivityAt?: string;
   task: string;
   generation: number;
 };
@@ -37,6 +51,9 @@ export type RoleEdge = {
   target: string;
   kind: EdgeKind;
   status: EdgeStatus;
+  occurrenceCount?: number;
+  lastEventAt?: string;
+  reason?: string;
 };
 
 export type FailurePolicy = {
@@ -65,6 +82,7 @@ export type RoleGraphSnapshot = {
   sequence: number;
   generatedAt: string;
   title: string;
+  relationshipMode?: RelationshipMode;
   nodes: RoleNode[];
   edges: RoleEdge[];
   failurePolicies: FailurePolicy[];

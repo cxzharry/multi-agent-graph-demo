@@ -11,7 +11,26 @@ export const NODE_STATUSES = new Set([
   'skipped',
 ]);
 
-export const EDGE_KINDS = new Set(['forward', 'return']);
+export const AGENT_LIVENESSES = new Set([
+  'running',
+  'idle',
+  'offline',
+  'stale',
+]);
+export const ASSIGNMENT_RESULTS = new Set([
+  'pass',
+  'fail',
+  'blocked',
+  'skipped',
+  'rework',
+]);
+export const RELATIONSHIP_MODES = new Set([
+  'declared',
+  'event-backed',
+  'unavailable',
+]);
+
+export const EDGE_KINDS = new Set(['forward', 'return', 'control']);
 export const EDGE_STATUSES = new Set([
   'pending',
   'active',
@@ -85,6 +104,15 @@ function validateNode(node, index) {
   if (!NODE_STATUSES.has(node.status)) {
     invalid(`${path}.status has an invalid node status: ${node.status}`);
   }
+  if (node.liveness !== undefined && !AGENT_LIVENESSES.has(node.liveness)) {
+    invalid(`${path}.liveness has an invalid agent liveness: ${node.liveness}`);
+  }
+  if (node.result !== undefined && !ASSIGNMENT_RESULTS.has(node.result)) {
+    invalid(`${path}.result has an invalid assignment result: ${node.result}`);
+  }
+  if (node.lastActivityAt !== undefined) {
+    requireTimestamp(node.lastActivityAt, `${path}.lastActivityAt`);
+  }
 }
 
 function validateEdge(edge, index, nodeIds) {
@@ -99,6 +127,13 @@ function validateEdge(edge, index, nodeIds) {
   if (!EDGE_STATUSES.has(edge.status)) {
     invalid(`${path}.status has an invalid edge status: ${edge.status}`);
   }
+  if (edge.occurrenceCount !== undefined) {
+    requireInteger(edge.occurrenceCount, `${path}.occurrenceCount`, 1);
+  }
+  if (edge.lastEventAt !== undefined) {
+    requireTimestamp(edge.lastEventAt, `${path}.lastEventAt`);
+  }
+  if (edge.reason !== undefined) requireString(edge.reason, `${path}.reason`);
 }
 
 const routeNodeFields = [
@@ -164,6 +199,14 @@ export function validateSnapshot(value) {
   if (value.shortName !== undefined) requireString(value.shortName, 'shortName');
   if (value.publisherFingerprint !== undefined) {
     requireString(value.publisherFingerprint, 'publisherFingerprint');
+  }
+  if (
+    value.relationshipMode !== undefined &&
+    !RELATIONSHIP_MODES.has(value.relationshipMode)
+  ) {
+    invalid(
+      `relationshipMode has an invalid relationship mode: ${value.relationshipMode}`,
+    );
   }
   requireInteger(value.sequence, 'sequence');
   requireTimestamp(value.generatedAt, 'generatedAt');

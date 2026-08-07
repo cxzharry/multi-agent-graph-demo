@@ -51,6 +51,39 @@ function snapshot(overrides = {}) {
   };
 }
 
+function eventBackedSnapshot(overrides = {}) {
+  const input = snapshot({
+    relationshipMode: 'event-backed',
+    nodes: [
+      {
+        ...snapshot().nodes[0],
+        liveness: 'running',
+        lastActivityAt: '2026-07-31T10:14:59Z',
+      },
+      {
+        ...snapshot().nodes[1],
+        liveness: 'offline',
+        result: 'pass',
+        lastActivityAt: '2026-07-31T10:14:58Z',
+      },
+    ],
+    edges: [
+      {
+        id: 'orchestrator-controls-implementation',
+        source: 'orchestrator',
+        target: 'implementation',
+        kind: 'control',
+        status: 'active',
+        occurrenceCount: 1,
+        lastEventAt: '2026-07-31T10:14:59Z',
+        reason: 'Current dispatch',
+      },
+    ],
+  });
+
+  return {...input, ...overrides};
+}
+
 describe('validateSnapshot', () => {
   test('accepts a valid compact snapshot without retaining caller mutations', () => {
     const input = snapshot();
@@ -60,6 +93,86 @@ describe('validateSnapshot', () => {
     expect(result).not.toBe(input);
     input.nodes[0].status = 'failed';
     expect(result.nodes[0].status).toBe('running');
+  });
+
+  test('accepts a complete event-backed snapshot', () => {
+    const input = eventBackedSnapshot();
+
+    expect(validateSnapshot(input)).toEqual(input);
+  });
+
+  test('accepts a legacy branched snapshot without event-backed fields', () => {
+    const input = snapshot({
+      nodes: [
+        ...snapshot().nodes,
+        {
+          id: 'review',
+          role: 'Review',
+          assignee: 'P6',
+          layer: 1,
+          status: 'pending',
+          task: 'Review',
+          generation: 1,
+        },
+      ],
+      edges: [
+        ...snapshot().edges,
+        {
+          id: 'orchestrator-to-review',
+          source: 'orchestrator',
+          target: 'review',
+          kind: 'forward',
+          status: 'pending',
+        },
+      ],
+    });
+
+    expect(validateSnapshot(input)).toEqual(input);
+  });
+
+  test.each([
+    ['liveness', 'working'],
+    ['result', 'passed'],
+  ])('rejects unknown node %s', (field, value) => {
+    const input = eventBackedSnapshot();
+    input.edges[0].kind = 'forward';
+    input.nodes[1][field] = value;
+
+    expect(() => validateSnapshot(input)).toThrow(new RegExp(field, 'i'));
+  });
+
+  test('rejects an unknown relationship mode', () => {
+    const input = eventBackedSnapshot({relationshipMode: 'guessed'});
+    input.edges[0].kind = 'forward';
+
+    expect(() => validateSnapshot(input)).toThrow(/relationshipMode/i);
+  });
+
+  test('rejects a control edge whose endpoint is unknown', () => {
+    const input = eventBackedSnapshot();
+    input.edges[0].target = 'missing';
+
+    expect(() => validateSnapshot(input)).toThrow(/unknown node/i);
+  });
+
+  test('rejects a zero occurrence count', () => {
+    const input = eventBackedSnapshot();
+    input.edges[0].kind = 'forward';
+    input.edges[0].occurrenceCount = 0;
+
+    expect(() => validateSnapshot(input)).toThrow(/occurrenceCount/i);
+  });
+
+  test.each([
+    ['node', 'lastActivityAt'],
+    ['edge', 'lastEventAt'],
+  ])('rejects a malformed %s activity timestamp', (owner, field) => {
+    const input = eventBackedSnapshot();
+    input.edges[0].kind = 'forward';
+    const target = owner === 'node' ? input.nodes[0] : input.edges[0];
+    target[field] = 'recently';
+
+    expect(() => validateSnapshot(input)).toThrow(new RegExp(field, 'i'));
   });
 
   test('accepts and retains an optional non-empty space name', () => {
