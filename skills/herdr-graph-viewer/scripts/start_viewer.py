@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import time
@@ -238,6 +239,35 @@ def viewer_url(port: int, scope_id: str, run_id: str) -> str:
     return f"http://127.0.0.1:{port}/?{query}"
 
 
+def flow_journal_path(runs_root: Path, workspace_id: str, run_id: str) -> Path:
+    run_label = re.sub(r"[^A-Za-z0-9._-]+", "-", run_id).strip("-.")[:64] or "run"
+    run_digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:12]
+    return (
+        runs_root.expanduser().resolve()
+        / workspace_id
+        / "viewer"
+        / "flow-events"
+        / f"{run_label}-{run_digest}.jsonl"
+    )
+
+
+def emit_command(journal: Path, workspace_id: str, run_id: str) -> str:
+    emitter = Path(__file__).with_name("emit_event.py").resolve()
+    return shlex.join(
+        [
+            "python3",
+            "-B",
+            str(emitter),
+            "--journal",
+            str(journal),
+            "--workspace-id",
+            workspace_id,
+            "--run-id",
+            run_id,
+        ]
+    )
+
+
 def _argv_value(argv: list[str], flag: str) -> str | None:
     try:
         index = argv.index(flag)
@@ -266,6 +296,7 @@ def _publisher_state_matches(
     workspace_id: str,
     endpoint: str,
     watch: bool,
+    flow_journal: str | None = None,
 ) -> bool:
     return (
         any(item.endswith("adapters/herdr/publisher.py") for item in argv)
@@ -273,6 +304,10 @@ def _publisher_state_matches(
         and _argv_value(argv, "--workspace-id") == workspace_id
         and _argv_value(argv, "--endpoint") == endpoint
         and ("--watch" in argv) is watch
+        and (
+            flow_journal is None
+            or _argv_value(argv, "--flow-journal") == flow_journal
+        )
     )
 
 
@@ -283,9 +318,10 @@ def _publisher_common_matches(
     space_name: str,
     endpoint: str,
     watch: bool,
+    flow_journal: str | None = None,
 ) -> bool:
     return _publisher_state_matches(
-        argv, state_path, workspace_id, endpoint, watch
+        argv, state_path, workspace_id, endpoint, watch, flow_journal
     ) and _argv_value(argv, "--space-name") == space_name
 
 
@@ -298,11 +334,18 @@ def publisher_matches(
     endpoint: str,
     watch: bool,
     expected_runtime_fingerprint: str | None = None,
+    flow_journal: str | None = None,
 ) -> ProcessMatch:
     status = "missing"
     for argv in _publisher_argvs(process_info):
         if not _publisher_common_matches(
-            argv, state_path, workspace_id, space_name, endpoint, watch
+            argv,
+            state_path,
+            workspace_id,
+            space_name,
+            endpoint,
+            watch,
+            flow_journal,
         ):
             continue
         manifest_path = _argv_value(argv, "--manifest")
@@ -342,6 +385,7 @@ def session_publisher_matches(
     endpoint: str,
     watch: bool,
     expected_runtime_fingerprint: str | None = None,
+    flow_journal: str | None = None,
 ) -> ProcessMatch:
     status = "missing"
     for argv in _publisher_argvs(process_info):
@@ -353,6 +397,10 @@ def session_publisher_matches(
             and _argv_value(argv, "--p1-pane-id") == p1_pane_id
             and _argv_value(argv, "--endpoint") == endpoint
             and ("--watch" in argv) is watch
+            and (
+                flow_journal is None
+                or _argv_value(argv, "--flow-journal") == flow_journal
+            )
         ):
             status = (
                 "reusable"
@@ -372,10 +420,11 @@ def _publisher_matches_state(
     workspace_id: str,
     endpoint: str,
     watch: bool,
+    flow_journal: str | None = None,
 ) -> bool:
     for argv in _publisher_argvs(process_info):
         if not _publisher_state_matches(
-            argv, state_path, workspace_id, endpoint, watch
+            argv, state_path, workspace_id, endpoint, watch, flow_journal
         ):
             continue
         mode_count = int("--synthesize" in argv) + int(
@@ -812,6 +861,7 @@ def _find_publisher(
     selection: ManifestSelection,
     endpoint: str,
     expected_runtime_fingerprint: str,
+    flow_journal: str | None = None,
 ) -> ProcessMatch:
     for _ in range(2):
         stale_seen = False
@@ -841,6 +891,7 @@ def _find_publisher(
                 endpoint,
                 True,
                 expected_runtime_fingerprint,
+                flow_journal,
             )
             if match.status == "reusable":
                 matches[pane_id] = "reusable"
@@ -855,7 +906,10 @@ def _find_publisher(
 
 
 def _find_publisher_for_state(
-    workspace_id: str, state_path: Path, endpoint: str
+    workspace_id: str,
+    state_path: Path,
+    endpoint: str,
+    flow_journal: str | None = None,
 ) -> ProcessMatch:
     matches: dict[str, str] = {}
     for pane in _workspace_panes(workspace_id):
@@ -872,7 +926,7 @@ def _find_publisher_for_state(
             raise
         info = _result_value(response, "process_info") or {}
         if isinstance(info, dict) and _publisher_matches_state(
-            info, str(state_path), workspace_id, endpoint, True
+            info, str(state_path), workspace_id, endpoint, True, flow_journal
         ):
             matches[pane_id] = "stale"
     return _unique_publisher_match(workspace_id, matches)
@@ -885,6 +939,7 @@ def _find_session_publisher(
     p1_pane_id: str,
     endpoint: str,
     expected_runtime_fingerprint: str,
+    flow_journal: str | None = None,
 ) -> ProcessMatch:
     last_transient_error: LauncherError | None = None
     for _ in range(2):
@@ -915,6 +970,7 @@ def _find_session_publisher(
                     endpoint,
                     True,
                     expected_runtime_fingerprint,
+                    flow_journal,
                 )
                 if match.status == "reusable":
                     matches[pane_id] = "reusable"
@@ -1174,6 +1230,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             raise LauncherError(
                 "missing_viewer", f"Viewer repo is incomplete: {repo}"
             )
+        flow_journal = flow_journal_path(args.runs_root, workspace_id, run_id)
+        flow_journal.parent.mkdir(parents=True, exist_ok=True)
         space_name = _resolve_space_name(workspace_id)
         scope_id = f"herdr:{workspace_id}"
         port, server_match = _select_server(
@@ -1195,6 +1253,7 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                 p1_pane,
                 endpoint,
                 publisher_fingerprint,
+                str(flow_journal),
             )
         else:
             publisher_match = _find_publisher(
@@ -1204,10 +1263,11 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                 selection,
                 endpoint,
                 publisher_fingerprint,
+                str(flow_journal),
             )
             if publisher_match.status == "missing":
                 publisher_match = _find_publisher_for_state(
-                    workspace_id, selected.path, endpoint
+                    workspace_id, selected.path, endpoint, str(flow_journal)
                 )
         publisher_replaced = publisher_match.status == "stale" or (
             server_replaced and publisher_match.status == "reusable"
@@ -1318,6 +1378,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     p1_pane,
                     "--endpoint",
                     endpoint,
+                    "--flow-journal",
+                    str(flow_journal),
                     "--runtime-fingerprint",
                     publisher_fingerprint,
                     "--sequence-floor",
@@ -1346,6 +1408,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
                     space_name,
                     "--endpoint",
                     endpoint,
+                    "--flow-journal",
+                    str(flow_journal),
                     "--runtime-fingerprint",
                     publisher_fingerprint,
                     "--watch",
@@ -1386,6 +1450,8 @@ def launch(args: argparse.Namespace) -> dict[str, Any]:
             if selection is not None and selection.path is not None
             else None
         ),
+        "flowJournal": str(flow_journal),
+        "emitCommand": emit_command(flow_journal, workspace_id, run_id),
         "url": viewer_url(port, scope_id, run_id),
         "sequence": snapshot.get("sequence"),
         "viewerFingerprint": viewer_fingerprint,

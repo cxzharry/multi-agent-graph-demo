@@ -900,6 +900,7 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
             publisher_fingerprint = launcher.publisher_runtime_fingerprint(repo)
             viewer_fingerprint = launcher.viewer_runtime_fingerprint(repo)
             endpoint = "http://127.0.0.1:4173/api/snapshots"
+            journal = launcher.flow_journal_path(root, "w1", "run-1")
             process_state = {"publisher": "stale", "server": "stale"}
             commands: dict[str, str] = {}
             calls: list[tuple[str, ...]] = []
@@ -908,7 +909,7 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
                 "python3 -B adapters/herdr/session_publisher.py "
                 "--workspace-id w1 --space-name graph-runtime "
                 "--p1-session-id run-1 --p1-pane-id w1:p1 "
-                f"--endpoint {endpoint} --watch --interval 2"
+                f"--endpoint {endpoint} --flow-journal {journal} --watch --interval 2"
             )
 
             def process_info(pane_id: str):
@@ -1053,6 +1054,9 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
             ],
         )
         self.assertIn("--sequence-floor 112", events[-1][2])
+        self.assertIn(
+            f"--flow-journal {result['flowJournal']}", events[-1][2]
+        )
         self.assertTrue(result["server"]["replaced"])
         self.assertTrue(result["publisher"]["replaced"])
         self.assertFalse(result["publisher"]["reused"])
@@ -1067,6 +1071,10 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
         self.assertTrue(result["publisher"]["reused"])
         self.assertFalse(result["publisher"]["replaced"])
         self.assertEqual(result["publisher"]["pane_id"], "publisher")
+        self.assertEqual(
+            Path(result["flowJournal"]).parent.name,
+            "flow-events",
+        )
 
     def test_degraded_current_runtimes_cycle_only_publisher_and_recheck(self):
         launcher = self.require_launcher()
@@ -2434,11 +2442,12 @@ class StartViewerTest(unittest.TestCase):
                 role_graph_manifest=str(manifest),
             )
             endpoint = "http://127.0.0.1:4173/api/snapshots"
+            journal = launcher.flow_journal_path(root, "w1", "current-run")
             old_command = (
                 "python3 -B adapters/herdr/publisher.py "
                 f"--state {state.resolve()} --manifest {manifest.resolve()} "
                 "--workspace-id w1 --space-name old-space "
-                f"--endpoint {endpoint} --watch --interval 2"
+                f"--endpoint {endpoint} --flow-journal {journal} --watch --interval 2"
             )
             calls: list[tuple[str, ...]] = []
             publisher_stopped = False
@@ -2755,6 +2764,18 @@ class StartViewerTest(unittest.TestCase):
                 result["run_id"], "019fb24f-f36f-7642-8679-5c6405fb3889"
             )
             self.assertIsNone(result["state"])
+            expected_journal = launcher.flow_journal_path(
+                root,
+                "w1",
+                "019fb24f-f36f-7642-8679-5c6405fb3889",
+            )
+            self.assertEqual(result["flowJournal"], str(expected_journal))
+            self.assertTrue(expected_journal.parent.is_dir())
+            self.assertFalse(expected_journal.exists())
+            self.assertEqual(
+                result["emitCommand"],
+                launcher.emit_command(expected_journal, "w1", result["run_id"]),
+            )
             command = commands["publisher"]
             self.assertIn(
                 (
@@ -2765,6 +2786,7 @@ class StartViewerTest(unittest.TestCase):
                 ),
                 command,
             )
+            self.assertIn(f"--flow-journal {expected_journal}", command)
             self.assertIn(
                 (
                     "pane",
@@ -3214,6 +3236,106 @@ class StartViewerTest(unittest.TestCase):
         self.assertEqual(
             url,
             "http://127.0.0.1:4173/?scopeId=herdr%3Aw+1&runId=run%2Fwith+space",
+        )
+
+    def test_flow_journal_path_is_absolute_scoped_and_collision_safe(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            first = launcher.flow_journal_path(root, "w1", "run/a")
+            second = launcher.flow_journal_path(root, "w1", "run:a")
+            foreign = launcher.flow_journal_path(root, "w2", "run/a")
+
+            self.assertTrue(first.is_absolute())
+            self.assertEqual(first.parent, (root / "w1/viewer/flow-events").resolve())
+            self.assertEqual(foreign.parent, (root / "w2/viewer/flow-events").resolve())
+            self.assertNotEqual(first, second)
+            self.assertNotEqual(first, foreign)
+            self.assertEqual(first.suffix, ".jsonl")
+
+    def test_publishers_require_the_exact_flow_journal_to_be_reusable(self):
+        launcher = self.require_launcher()
+        state = "/tmp/run/workspace-state.json"
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        journal = "/tmp/runs/w1/viewer/flow-events/run.jsonl"
+        foreign = "/tmp/runs/w2/viewer/flow-events/run.jsonl"
+        control_process = {
+            "foreground_processes": [
+                {
+                    "cmdline": (
+                        "python3 -B adapters/herdr/publisher.py "
+                        f"--state {state} --synthesize --workspace-id w1 "
+                        "--space-name graph-runtime "
+                        f"--endpoint {endpoint} --flow-journal {journal} --watch"
+                    )
+                }
+            ]
+        }
+        session_process = {
+            "foreground_processes": [
+                {
+                    "cmdline": (
+                        "python3 -B adapters/herdr/session_publisher.py "
+                        "--workspace-id w1 --space-name graph-runtime "
+                        "--p1-session-id run-1 --p1-pane-id w1:p1 "
+                        f"--endpoint {endpoint} --flow-journal {journal} --watch"
+                    )
+                }
+            ]
+        }
+
+        self.assertEqual(
+            launcher.publisher_matches(
+                control_process,
+                state,
+                launcher.ManifestSelection("synthetic", None),
+                "w1",
+                "graph-runtime",
+                endpoint,
+                True,
+                flow_journal=journal,
+            ).status,
+            "reusable",
+        )
+        self.assertEqual(
+            launcher.publisher_matches(
+                control_process,
+                state,
+                launcher.ManifestSelection("synthetic", None),
+                "w1",
+                "graph-runtime",
+                endpoint,
+                True,
+                flow_journal=foreign,
+            ).status,
+            "missing",
+        )
+        self.assertEqual(
+            launcher.session_publisher_matches(
+                session_process,
+                "w1",
+                "graph-runtime",
+                "run-1",
+                "w1:p1",
+                endpoint,
+                True,
+                flow_journal=journal,
+            ).status,
+            "reusable",
+        )
+        self.assertEqual(
+            launcher.session_publisher_matches(
+                session_process,
+                "w1",
+                "graph-runtime",
+                "run-1",
+                "w1:p1",
+                endpoint,
+                True,
+                flow_journal=foreign,
+            ).status,
+            "missing",
         )
 
 
