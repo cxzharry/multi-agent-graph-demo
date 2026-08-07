@@ -471,7 +471,7 @@ Each lane writes a generation-bound exact-candidate receipt.
 
 - [ ] **Step 1: Lock rubric before evaluation**
 
-Use `Intent: IMPROVE`, `max-iter: until-pass`, and 120-minute wall-clock budget. Criteria: liveness/result truth 20%; event-backed relationships 25%; option-A live visual 20%; recovery/isolation 15%; non-orchestrator flexibility 10%; performance/other-skill isolation 10%. Every score is at least 8.5, with hard floor 8.0 on truth, isolation, and live visual.
+Use `Intent: IMPROVE`, `max-iter: until-pass`, and 120-minute wall-clock budget. Keep five criteria: liveness/result truth 20%; event-backed relationships 25%; option-A live visual 20%; recovery/isolation/non-orchestrator flexibility 25%; performance/other-skill isolation 10%. Every score is at least 8.5, with hard floor 8.0 on truth, isolation, and live visual.
 
 - [ ] **Step 2: Evaluate exact evidence**
 
