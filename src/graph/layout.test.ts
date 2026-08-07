@@ -277,6 +277,15 @@ describe('layoutRoleGraph', () => {
     expect(positions.get('integration')!.y).toBeLessThan(
       positions.get('review')!.y,
     );
+    const graphLeft = Math.min(
+      ...result.positionedNodes.map(node => node.position.x),
+    );
+    const graphRight = Math.max(
+      ...result.positionedNodes.map(node => node.position.x + ROLE_NODE_WIDTH),
+    );
+    expect(positions.get('orchestrator')!.x + ROLE_NODE_WIDTH / 2).toBe(
+      (graphLeft + graphRight) / 2,
+    );
     expect(positions).toEqual(artifactOnly);
     expect(result.forwardEdges.map(edge => edge.id)).toEqual(
       artifactEdges.map(edge => edge.id).sort(),

@@ -81,6 +81,15 @@ export function layoutRoleGraph(
   }
 
   const layerValues = [...nodesByLayer.keys()].sort((left, right) => left - right);
+  const widestLayer = Math.max(
+    ...layerValues.map(layerValue => {
+      const group = nodesByLayer.get(layerValue)!;
+      return (
+        group.length * ROLE_NODE_WIDTH +
+        (group.length - 1) * NODE_SEPARATION
+      );
+    }),
+  );
   const positionedNodes: PositionedRoleNode[] = [];
   for (const [layerIndex, layerValue] of layerValues.entries()) {
     const group = nodesByLayer.get(layerValue)!;
@@ -95,7 +104,10 @@ export function layoutRoleGraph(
       candidateCenters.reduce((sum, x) => sum + x, 0) / candidateCenters.length;
     const groupWidth =
       group.length * ROLE_NODE_WIDTH + (group.length - 1) * NODE_SEPARATION;
-    const groupLeft = averageCenter - groupWidth / 2;
+    const groupLeft =
+      relationshipMode === 'event-backed'
+        ? (widestLayer - groupWidth) / 2
+        : averageCenter - groupWidth / 2;
 
     group.forEach((node, groupIndex) => {
       positionedNodes.push({

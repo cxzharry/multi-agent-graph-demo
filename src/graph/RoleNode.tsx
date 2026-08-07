@@ -3,7 +3,7 @@ import {Handle, Position, type Node, type NodeProps} from '@xyflow/react';
 import type {AgentLiveness, RoleNode as RoleNodeData} from './types';
 
 export type RoleFlowNode = Node<
-  RoleNodeData & {synthetic: boolean} & Record<string, unknown>,
+  RoleNodeData & {eventBacked: boolean; synthetic: boolean} & Record<string, unknown>,
   'role'
 >;
 
@@ -18,7 +18,7 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
 
   return (
     <article
-      className={`role-node status-${data.status} liveness-${liveness}${hasLiveFacts ? ' has-live-facts' : ''}${showTask ? '' : ' role-node-no-task'}`}
+      className={`role-node status-${data.status} liveness-${liveness}${hasLiveFacts ? ' has-live-facts' : ''}${data.eventBacked ? ' event-backed-node' : ''}${showTask ? '' : ' role-node-no-task'}`}
       data-node-id={data.id}
       data-liveness={liveness}
       data-result={data.result}

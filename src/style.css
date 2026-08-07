@@ -598,7 +598,7 @@ select {
   margin-left: auto;
   color: #707c8c;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
@@ -768,6 +768,25 @@ select {
   filter: drop-shadow(0 0 4px rgb(239 106 76 / 28%));
 }
 
+.relationship-edge-label {
+  position: absolute;
+  z-index: 4;
+  padding: 3px 5px;
+  border: 1px solid #3a4552;
+  border-radius: 4px;
+  color: #c8d0da;
+  background: rgb(17 21 26 / 94%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.2;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.relationship-edge-label-muted {
+  opacity: 0.58;
+}
+
 .react-flow__controls {
   overflow: hidden;
   border: 1px solid #303946;
@@ -846,6 +865,10 @@ select {
     padding: 10px;
   }
 
+  .role-node.event-backed-node {
+    width: 120px;
+  }
+
   .role-node-heading {
     grid-template-columns: 8px minmax(0, 1fr);
   }
@@ -882,5 +905,16 @@ select {
 
   .role-node-no-task.has-live-facts .role-status {
     margin-top: 48px;
+  }
+
+  .role-node-no-task.has-live-facts.event-backed-node .role-status {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 28px;
+  }
+
+  .event-backed-node .activity-time {
+    margin-left: 0;
   }
 }

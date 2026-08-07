@@ -8,6 +8,15 @@ import {spawn} from 'node:child_process';
 import {chromium} from 'playwright';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
+const visibleUiSource = await readFile(
+  path.join(repositoryRoot, 'src', 'main.tsx'),
+  'utf8',
+);
+assert.doesNotMatch(
+  visibleUiSource,
+  /[\u2013\u2014]/,
+  'Visible relationship UI must use hyphen-minus instead of en/em dashes',
+);
 const artifactsDirectory = path.join(repositoryRoot, 'artifacts');
 const screenshotPath = path.join(
   artifactsDirectory,
@@ -200,6 +209,153 @@ async function responsiveVisualMetrics(page) {
         Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top))
       );
     }
+  });
+}
+
+async function eventBackedGeometry(page) {
+  return page.evaluate(() => {
+    const required = selector => {
+      const element = document.querySelector(selector);
+      if (!(element instanceof Element)) throw new Error(`Missing ${selector}`);
+      return element;
+    };
+    const bounds = element => element.getBoundingClientRect().toJSON();
+    const inside = (inner, outer) =>
+      inner.left >= outer.left - 1 &&
+      inner.right <= outer.right + 1 &&
+      inner.top >= outer.top - 1 &&
+      inner.bottom <= outer.bottom + 1;
+    const overlapArea = (left, right) =>
+      Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left)) *
+      Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+
+    const graphPanel = bounds(required('.graph-panel'));
+    const graphMeta = bounds(required('.graph-meta'));
+    const viewerHeader = bounds(required('.viewer-header'));
+    const graphControls = bounds(required('.react-flow__controls'));
+    const viewport = required('.react-flow__viewport');
+    const scale = Math.abs(
+      new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a,
+    );
+    const nodes = [...document.querySelectorAll('[data-testid="role-node"]')].map(
+      node => {
+        const nodeBounds = bounds(node);
+        const textElements = [
+          ...node.querySelectorAll(
+            'h3, .assignee-chip, .liveness-badge, .result-badge, .activity-time',
+          ),
+        ];
+        const textBounds = textElements.map(element => ({
+          label: element.textContent?.trim() ?? '',
+          bounds: bounds(element),
+        }));
+        const textCollisions = [];
+        for (let leftIndex = 0; leftIndex < textBounds.length; leftIndex += 1) {
+          for (
+            let rightIndex = leftIndex + 1;
+            rightIndex < textBounds.length;
+            rightIndex += 1
+          ) {
+            if (
+              overlapArea(
+                textBounds[leftIndex].bounds,
+                textBounds[rightIndex].bounds,
+              ) > 1
+            ) {
+              textCollisions.push(
+                `${textBounds[leftIndex].label}/${textBounds[rightIndex].label}`,
+              );
+            }
+          }
+        }
+        return {
+          id: node.getAttribute('data-node-id'),
+          bounds: nodeBounds,
+          insidePanel: inside(nodeBounds, graphPanel),
+          contentContained: textElements.every(element => {
+            const elementBounds = bounds(element);
+            return (
+              inside(elementBounds, nodeBounds) &&
+              element.scrollWidth <= element.clientWidth + 1 &&
+              element.scrollHeight <= element.clientHeight + 1
+            );
+          }),
+          minimumTextSize: Math.min(
+            ...textElements.map(
+              element => Number.parseFloat(getComputedStyle(element).fontSize) * scale,
+            ),
+          ),
+          textCollisions,
+        };
+      },
+    );
+    const p1 = nodes.find(node => node.id === 'orchestrator');
+    if (!p1) throw new Error('Missing event-backed P1');
+    const customLabels = [
+      ...document.querySelectorAll('[data-testid="relationship-label"]'),
+    ];
+    const labelElements =
+      customLabels.length > 0
+        ? customLabels
+        : [...document.querySelectorAll('.react-flow__edge-textwrapper')];
+    const edgeLabels = labelElements.map((label, index) => ({
+      id: label.getAttribute('data-edge-id') ?? `edge-label-${index}`,
+      text: label.textContent?.trim() ?? '',
+      bounds: bounds(label),
+      insidePanel: inside(bounds(label), graphPanel),
+      effectiveTextSize:
+        Number.parseFloat(getComputedStyle(label).fontSize) * scale,
+    }));
+    const labelCollisions = [];
+    for (let leftIndex = 0; leftIndex < edgeLabels.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < edgeLabels.length;
+        rightIndex += 1
+      ) {
+        const overlap = overlapArea(
+          edgeLabels[leftIndex].bounds,
+          edgeLabels[rightIndex].bounds,
+        );
+        if (overlap > 1) {
+          labelCollisions.push({
+            left: edgeLabels[leftIndex].text,
+            right: edgeLabels[rightIndex].text,
+            overlap,
+          });
+        }
+      }
+    }
+
+    return {
+      scale,
+      graphPanel,
+      p1CenterDelta:
+        p1.bounds.left + p1.bounds.width / 2 -
+        (graphPanel.left + graphPanel.width / 2),
+      p1HeaderClearance:
+        p1.bounds.top - Math.max(viewerHeader.bottom, graphMeta.bottom),
+      p1ControlOverlap: overlapArea(p1.bounds, graphControls),
+      p1GraphMetaOverlap: overlapArea(p1.bounds, graphMeta),
+      outsideNodes: nodes.filter(node => !node.insidePanel).map(node => node.id),
+      clippedNodeContent: nodes
+        .filter(node => !node.contentContained)
+        .map(node => node.id),
+      nodeTextCollisions: nodes
+        .filter(node => node.textCollisions.length > 0)
+        .map(node => `${node.id}:${node.textCollisions.join(',')}`),
+      minimumNodeTextSize: Math.min(
+        ...nodes.map(node => node.minimumTextSize),
+      ),
+      edgeLabelCount: edgeLabels.length,
+      outsideEdgeLabels: edgeLabels
+        .filter(label => !label.insidePanel)
+        .map(label => label.text),
+      minimumEdgeLabelTextSize: Math.min(
+        ...edgeLabels.map(label => label.effectiveTextSize),
+      ),
+      labelCollisions,
+    };
   });
 }
 
@@ -969,6 +1125,7 @@ try {
   );
   await page.locator('.snapshot-time').getByText(recentClockLabel).waitFor();
 
+  const optionAGeometry = [];
   for (const viewport of [
     {width: 1440, height: 1000},
     {width: 1024, height: 900},
@@ -982,6 +1139,21 @@ try {
       }).toString()}`,
     );
     await waitForNodeCount(page, eventBackedLiveness.nodes.length);
+    await page.evaluate(
+      () =>
+        new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    const geometry = await eventBackedGeometry(page);
+    const size = `${viewport.width}x${viewport.height}`;
+    optionAGeometry.push({size, ...geometry});
+    console.log(`event-backed Option A ${size}: ${JSON.stringify(geometry)}`);
+    await mkdir(artifactsDirectory, {recursive: true});
+    await page.screenshot({
+      path: path.join(artifactsDirectory, `event-backed-option-a-${size}.png`),
+      fullPage: true,
+    });
     const responsiveMetrics = await responsiveVisualMetrics(page);
     assert.ok(
       responsiveMetrics.documentWidth <= responsiveMetrics.viewportWidth &&
@@ -1095,7 +1267,20 @@ try {
           path => !/[CQ]/.test(path) && (path.match(/L/g) || []).length === 1,
         ),
       );
+      const artifactDashes = await page
+        .locator('.forward-edge .react-flow__edge-path')
+        .evaluateAll(paths =>
+          paths.map(path => getComputedStyle(path).strokeDasharray),
+        );
+      assert.ok(
+        artifactDashes.every(dash => dash === 'none'),
+        `Only the current P1 control edge may be dashed: ${artifactDashes.join(', ')}`,
+      );
       assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 1);
+      const feedbackDash = await page
+        .locator('[data-testid="feedback-edge"]')
+        .evaluate(path => getComputedStyle(path).strokeDasharray);
+      assert.equal(feedbackDash, 'none');
       const feedbackBox = await page
         .locator('[data-testid="feedback-edge"]')
         .boundingBox();
@@ -1131,6 +1316,56 @@ try {
       );
     }
   }
+
+  const geometryFailures = optionAGeometry.flatMap(metrics => {
+    const failures = [];
+    if (
+      metrics.size !== '390x844' &&
+      Math.abs(metrics.p1CenterDelta) > 2
+    ) {
+      failures.push(`P1 center delta ${metrics.p1CenterDelta.toFixed(1)}px`);
+    }
+    if (metrics.p1HeaderClearance < 12) {
+      failures.push(`P1 header clearance ${metrics.p1HeaderClearance.toFixed(1)}px`);
+    }
+    if (metrics.p1ControlOverlap > 1 || metrics.p1GraphMetaOverlap > 1) {
+      failures.push('P1 overlaps graph controls or metadata');
+    }
+    if (metrics.outsideNodes.length > 0) {
+      failures.push(`outside nodes ${metrics.outsideNodes.join(',')}`);
+    }
+    if (metrics.clippedNodeContent.length > 0) {
+      failures.push(`clipped node content ${metrics.clippedNodeContent.join(',')}`);
+    }
+    if (metrics.nodeTextCollisions.length > 0) {
+      failures.push(`node text collisions ${metrics.nodeTextCollisions.join(';')}`);
+    }
+    if (metrics.minimumNodeTextSize < 8) {
+      failures.push(`node text ${metrics.minimumNodeTextSize.toFixed(1)}px`);
+    }
+    if (metrics.edgeLabelCount !== eventBackedLiveness.edges.length) {
+      failures.push(
+        `edge labels ${metrics.edgeLabelCount}/${eventBackedLiveness.edges.length}`,
+      );
+    }
+    if (metrics.outsideEdgeLabels.length > 0) {
+      failures.push(`outside edge labels ${metrics.outsideEdgeLabels.join(',')}`);
+    }
+    if (metrics.minimumEdgeLabelTextSize < 8) {
+      failures.push(
+        `edge label text ${metrics.minimumEdgeLabelTextSize.toFixed(1)}px`,
+      );
+    }
+    if (metrics.labelCollisions.length > 0) {
+      failures.push(`edge label collisions ${JSON.stringify(metrics.labelCollisions)}`);
+    }
+    return failures.map(failure => `${metrics.size}: ${failure}`);
+  });
+  assert.deepEqual(
+    geometryFailures,
+    [],
+    `Event-backed Option A geometry failures:\n${geometryFailures.join('\n')}`,
+  );
 
   await page.goto(
     `${baseUrl}/?${new URLSearchParams({

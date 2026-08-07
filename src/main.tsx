@@ -13,6 +13,7 @@ import '@xyflow/react/dist/style.css';
 
 import {
   FeedbackEdge,
+  RelationshipEdge,
   type FeedbackFlowEdge,
 } from './graph/FeedbackEdge';
 import {layoutRoleGraph} from './graph/layout';
@@ -32,7 +33,9 @@ import {
 import './style.css';
 
 const nodeTypes = {role: RoleNode};
-const edgeTypes = {feedback: FeedbackEdge};
+const edgeTypes = {feedback: FeedbackEdge, relationship: RelationshipEdge};
+const MOBILE_EVENT_NODE_WIDTH = 120;
+const MOBILE_EVENT_NODE_GAP = 12;
 
 function SyncNodeInternals({nodes}: {nodes: RoleFlowNode[]}) {
   const updateNodeInternals = useUpdateNodeInternals();
@@ -135,22 +138,29 @@ function App() {
       });
     }
 
+    const mobileNodeWidth =
+      relationshipMode === 'event-backed' ? MOBILE_EVENT_NODE_WIDTH : 140;
+    const mobileNodeGap =
+      relationshipMode === 'event-backed' ? MOBILE_EVENT_NODE_GAP : 20;
     return rows.flatMap(([y, group]) => {
       const sorted = [...group].sort(
         (left, right) =>
           left.position.x - right.position.x || left.id.localeCompare(right.id),
       );
-      const rowWidth = sorted.length * 140 + (sorted.length - 1) * 20;
+      const rowWidth =
+        sorted.length * mobileNodeWidth +
+        (sorted.length - 1) * mobileNodeGap;
       const left = (300 - rowWidth) / 2;
       return sorted.map((node, index) => ({
         ...node,
-        position: {x: left + index * 160, y},
+        position: {x: left + index * (mobileNodeWidth + mobileNodeGap), y},
       }));
     });
   }, [
     layout.forwardEdges.length,
     layout.positionedNodes,
     observedTopology,
+    relationshipMode,
     responsiveGraphMode,
   ]);
 
@@ -162,12 +172,13 @@ function App() {
         position: node.position,
         data: {
           ...node,
+          eventBacked: relationshipMode === 'event-backed',
           synthetic: observedTopology,
         },
         draggable: false,
         selectable: false,
       })),
-    [observedTopology, positionedNodes],
+    [observedTopology, positionedNodes, relationshipMode],
   );
   const minimumReadableZoom = responsiveGraphMode === 'mobile' ? 0.86 : 0.8;
   const initialFitView = useMemo<FitViewOptions<RoleFlowNode>>(() => {
@@ -186,64 +197,98 @@ function App() {
   }, [minimumReadableZoom, nodes]);
   const graphPanelHeight = useMemo(() => {
     const rows = new Set(nodes.map(node => node.position.y));
-    if (rows.size <= 4) return 720;
     const nodeHeight = responsiveGraphMode === 'mobile' ? 188 : 148;
     const graphBottom = Math.max(
       ...nodes.map(node => node.position.y + nodeHeight),
     );
+    if (relationshipMode === 'event-backed' && snapshot?.edges.length) {
+      return Math.max(720, graphBottom + 160);
+    }
+    if (rows.size <= 4) return 720;
     return Math.max(720, graphBottom + 120);
-  }, [nodes, responsiveGraphMode]);
+  }, [nodes, relationshipMode, responsiveGraphMode, snapshot]);
   const edges = useMemo<Edge[]>(() => {
-    const forwardEdges: Edge[] = layout.forwardEdges.map(edge => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      type: 'straight',
-      animated: edge.status === 'active',
-      className: `forward-edge edge-${edge.status}`,
-      label: relationshipLabel(edge),
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#748298',
-      },
-    }));
-    const controlEdges: Edge[] = (snapshot?.edges ?? [])
-      .filter(edge => edge.kind === 'control')
-      .map(edge => ({
+    const forwardEdgesByTarget = new Map<string, typeof layout.forwardEdges>();
+    for (const edge of layout.forwardEdges) {
+      const siblings = forwardEdgesByTarget.get(edge.target) ?? [];
+      siblings.push(edge);
+      forwardEdgesByTarget.set(edge.target, siblings);
+    }
+    const forwardEdges: Edge[] = layout.forwardEdges.map(edge => {
+      const labels = relationshipLabels(edge);
+      const siblings = forwardEdgesByTarget.get(edge.target) ?? [edge];
+      return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        type: 'straight',
-        animated: edge.status === 'active',
-        className: `control-edge edge-${edge.status}`,
-        label: relationshipLabel(edge),
+        type: 'relationship',
+        animated:
+          relationshipMode !== 'event-backed' && edge.status === 'active',
+        className: `forward-edge edge-${edge.status}`,
+        data: {
+          label: labels.visible,
+          labelOffsetY:
+            siblings.length > 1 ? siblings.indexOf(edge) * 24 : 0,
+          labelTitle: labels.full,
+          muted: edge.status !== 'active',
+        },
         markerEnd: {
           type: MarkerType.ArrowClosed,
           color: '#748298',
         },
-      }));
+      };
+    });
+    const controlEdges: Edge[] = (snapshot?.edges ?? [])
+      .filter(edge => edge.kind === 'control')
+      .map(edge => {
+        const labels = relationshipLabels(edge);
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: 'relationship',
+          animated: edge.status === 'active',
+          className: `control-edge edge-${edge.status}`,
+          data: {
+            label: labels.visible,
+            labelProgress: 0.4,
+            labelTitle: labels.full,
+            muted: edge.status !== 'active',
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#748298',
+          },
+        };
+      });
     const returnEdges: FeedbackFlowEdge[] = (snapshot?.edges ?? [])
       .filter(edge => edge.kind === 'return')
-      .map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        type: 'feedback',
-        animated: edge.status === 'active',
-        className: `return-edge edge-${edge.status}`,
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: '#ef6a4c',
-        },
-        data: {
-          feedbackGutterX: feedbackGutterX(
-            responsiveGraphMode,
-            layout.feedbackGutterX,
-          ),
-          label: relationshipLabel(edge),
-          reason: edge.reason ?? 'Workflow return',
-        },
-      }));
+      .map(edge => {
+        const labels = relationshipLabels(edge);
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: 'feedback',
+          animated:
+            relationshipMode !== 'event-backed' && edge.status === 'active',
+          className: `return-edge edge-${edge.status}`,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#ef6a4c',
+          },
+          data: {
+            feedbackGutterX: feedbackGutterX(
+              responsiveGraphMode,
+              layout.feedbackGutterX,
+            ),
+            label: labels.visible,
+            labelTitle: labels.full,
+            muted: edge.status !== 'active',
+            reason: edge.reason ?? 'Workflow return',
+          },
+        };
+      });
     if (returnEdges.length > 0) {
       return [...forwardEdges, ...controlEdges, ...returnEdges];
     }
@@ -255,7 +300,7 @@ function App() {
       source: route.gateNodeId,
       target: route.returnToNodeId,
       type: 'feedback',
-      animated: true,
+      animated: relationshipMode !== 'event-backed',
       markerEnd: {
         type: MarkerType.ArrowClosed,
         color: '#ef6a4c',
@@ -391,7 +436,7 @@ function App() {
                       data-testid="relationship-notice"
                       role="note"
                     >
-                      <strong>Event-backed topology — no relationship events yet</strong>
+                      <strong>Event-backed topology - no relationship events yet</strong>
                       <span>
                         Agent facts are live. Workflow links appear after the first
                         recorded dispatch or artifact handoff.
@@ -404,7 +449,7 @@ function App() {
                     data-testid="relationship-notice"
                     role="note"
                   >
-                    <strong>Observed topology — relationships unavailable</strong>
+                    <strong>Observed topology - relationships unavailable</strong>
                     <span>
                       Live agents and statuses are observed directly. An exact
                       custom topology is required to draw workflow relationships.
@@ -546,20 +591,35 @@ function feedbackGutterX(
   mode: ResponsiveGraphMode,
   desktopGutterX: number,
 ): number {
-  return mode === 'mobile' ? 316 : mode === 'tablet' ? 960 : desktopGutterX;
+  return mode === 'mobile' ? 366 : mode === 'tablet' ? 960 : desktopGutterX;
 }
 
-function relationshipLabel(edge: {
+function relationshipLabels(edge: {
   occurrenceCount?: number;
   lastEventAt?: string;
   reason?: string;
-}): string | undefined {
-  const parts = [
+}): {full?: string; visible?: string} {
+  const fullParts = [
     edge.reason,
     edge.occurrenceCount && `×${edge.occurrenceCount}`,
     edge.lastEventAt && formatTimestamp(edge.lastEventAt),
   ].filter(Boolean);
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+  const reasonWords = edge.reason?.split(/\s+/) ?? [];
+  const compactReason =
+    reasonWords.length > 2
+      ? `${reasonWords[0]} ${reasonWords[reasonWords.length - 1]}`
+      : edge.reason;
+  const visibleParts = [
+    compactReason,
+    edge.occurrenceCount && `×${edge.occurrenceCount}`,
+  ].filter(Boolean);
+  return {
+    full: fullParts.length > 0 ? fullParts.join(' · ') : undefined,
+    visible:
+      visibleParts.length > 0
+        ? visibleParts.join(' · ')
+        : fullParts[0]?.toString(),
+  };
 }
 
 function formatTimestamp(value: string | number) {
