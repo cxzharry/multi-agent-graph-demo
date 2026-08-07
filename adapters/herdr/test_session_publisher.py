@@ -662,6 +662,36 @@ class EventBackedSessionTests(unittest.TestCase):
             self.assertIn("malformed", runtime.telemetry["reason"])
             self.assertEqual(before, journal_path.read_bytes())
 
+    def test_fresh_flow_runtime_recovers_valid_prefix_before_malformed_tail(self):
+        values = copy.deepcopy(self.events)
+        values[1]["at"] = "2026-08-07T01:02:04Z"
+        with tempfile.TemporaryDirectory() as directory:
+            journal_path = Path(directory) / "flow-events.jsonl"
+            journal = FlowJournal(
+                journal_path, workspace_id="wK", run_id=P1_SESSION
+            )
+            for value in values:
+                journal.append(value)
+            with journal_path.open("ab") as handle:
+                handle.write(b'{"malformed"')
+            before = journal_path.read_bytes()
+            runtime = publisher_module.FlowRuntime(
+                journal_path, workspace_id="wK", run_id=P1_SESSION
+            )
+
+            self.assertTrue(runtime.poll())
+
+            self.assertEqual(
+                ["evt-dispatch", "evt-result"],
+                [value["eventId"] for value in runtime.events],
+            )
+            self.assertEqual("degraded", runtime.telemetry["status"])
+            self.assertEqual(
+                "2026-08-07T01:02:04Z", runtime.telemetry["lastValidAt"]
+            )
+            self.assertIn("malformed", runtime.telemetry["reason"])
+            self.assertEqual(before, journal_path.read_bytes())
+
     def test_cli_accepts_exact_flow_journal_path(self):
         args = _parser().parse_args(
             [

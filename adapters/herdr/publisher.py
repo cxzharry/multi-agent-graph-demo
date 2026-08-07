@@ -70,6 +70,8 @@ class FlowRuntime:
         try:
             new_events = self.reader.read_new()
         except (JournalError, OSError) as error:
+            recovered_events = getattr(error, "recovered_events", [])
+            self.events.extend(recovered_events)
             self.telemetry = {
                 "status": "degraded",
                 **(
@@ -79,7 +81,7 @@ class FlowRuntime:
                 ),
                 "reason": str(error),
             }
-            return self.telemetry != previous_telemetry
+            return bool(recovered_events) or self.telemetry != previous_telemetry
 
         self.events.extend(new_events)
         self.telemetry = {

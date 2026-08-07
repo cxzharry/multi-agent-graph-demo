@@ -56,7 +56,10 @@ def project_flow(*, events, live_agents, p1_session_id, prior_nodes=None):
                 nodes,
                 sessions,
                 descriptor,
-                generation if descriptor.get("id") != "orchestrator" else None,
+                generation
+                if descriptor.get("id") != "orchestrator"
+                or kind == "CONTROLLER_RECOVERED"
+                else None,
                 event["at"],
             )
 
@@ -87,7 +90,7 @@ def project_flow(*, events, live_agents, p1_session_id, prior_nodes=None):
                     "source": key[0],
                     "target": key[1],
                     "kind": edge_kind,
-                    "status": "complete",
+                    "status": "passed" if edge_kind == "forward" else "inactive",
                     "occurrenceCount": 0,
                     "lastEventAt": event["at"],
                     "generation": generation,
@@ -145,6 +148,8 @@ def project_flow(*, events, live_agents, p1_session_id, prior_nodes=None):
 
     if active_control is not None:
         relationships["control"][active_control[2]]["status"] = "active"
+    if active_rework is not None:
+        relationships["return"][active_rework[2]]["status"] = "active"
     edges = [
         edge
         for edge_kind in ("forward", "control", "return")
@@ -154,8 +159,12 @@ def project_flow(*, events, live_agents, p1_session_id, prior_nodes=None):
     if active_rework is not None:
         edge = relationships["return"][active_rework[2]]
         failure_route = {
-            "sourceNodeId": edge["source"],
-            "targetNodeId": edge["target"],
+            "gateNodeId": edge["source"],
+            "returnToNodeId": edge["target"],
+            "ownerNodeId": edge["target"],
+            "resumeNodeId": edge["source"],
+            "rerunNodeIds": [edge["source"]],
+            "excludedNodeIds": [],
             "reason": edge["reason"],
             "generation": edge["generation"],
         }

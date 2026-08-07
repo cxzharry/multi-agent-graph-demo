@@ -25,6 +25,10 @@ RESULTS = {"PASS", "FAIL", "BLOCKED", "SKIPPED", "REWORK"}
 class JournalError(ValueError):
     """Raised when journal data violates the event contract."""
 
+    def __init__(self, message: str, *, recovered_events=None):
+        super().__init__(message)
+        self.recovered_events = list(recovered_events or [])
+
 
 class FlowJournal:
     """Append validated events without scanning existing journal history."""
@@ -85,25 +89,43 @@ class FlowJournalReader:
 
         if not suffix:
             return []
-        if not suffix.endswith(b"\n"):
-            raise JournalError("journal has a malformed tail")
-
         seen = set(self._seen_event_ids)
         events = []
-        for line_number, raw_line in enumerate(suffix.splitlines(), start=1):
+        recovered_bytes = 0
+        for line_number, raw_line in enumerate(
+            suffix.splitlines(keepends=True), start=1
+        ):
+            if not raw_line.endswith(b"\n"):
+                self._offset += recovered_bytes
+                self._seen_event_ids = seen
+                raise JournalError(
+                    "journal has a malformed tail", recovered_events=events
+                )
             try:
                 value = json.loads(raw_line)
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                self._offset += recovered_bytes
+                self._seen_event_ids = seen
                 raise JournalError(
-                    f"journal has malformed JSON at appended line {line_number}"
+                    f"journal has malformed JSON at appended line {line_number}",
+                    recovered_events=events,
                 ) from error
-            event = validate_event(
-                value, workspace_id=self.workspace_id, run_id=self.run_id
-            )
+            try:
+                event = validate_event(
+                    value, workspace_id=self.workspace_id, run_id=self.run_id
+                )
+            except JournalError as error:
+                self._offset += recovered_bytes
+                self._seen_event_ids = seen
+                raise JournalError(
+                    str(error), recovered_events=events
+                ) from error
             if event["eventId"] in seen:
+                recovered_bytes += len(raw_line)
                 continue
             seen.add(event["eventId"])
             events.append(event)
+            recovered_bytes += len(raw_line)
 
         self._offset = next_offset
         self._seen_event_ids = seen

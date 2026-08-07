@@ -100,6 +100,48 @@ def option_a_events():
 
 
 class OptionAProjectionTests(unittest.TestCase):
+    def test_relationships_match_consumer_status_and_active_route_contract(self):
+        projected = project_flow(
+            events=option_a_events(),
+            live_agents=[
+                agent("session-p1", name="p1_orchestrator"),
+                agent("session-p4-g2", name="p4_impl"),
+            ],
+            p1_session_id="session-p1",
+        )
+        edges_by_kind = {
+            kind: [edge for edge in projected["edges"] if edge["kind"] == kind]
+            for kind in ("forward", "control", "return")
+        }
+
+        self.assertEqual(
+            {"passed"}, {edge["status"] for edge in edges_by_kind["forward"]}
+        )
+        self.assertEqual(
+            1,
+            sum(edge["status"] == "active" for edge in edges_by_kind["control"]),
+        )
+        self.assertEqual(
+            {"active", "inactive"},
+            {edge["status"] for edge in edges_by_kind["control"]},
+        )
+        self.assertEqual(
+            ["active"], [edge["status"] for edge in edges_by_kind["return"]]
+        )
+        self.assertEqual(
+            {
+                "gateNodeId": P6["id"],
+                "returnToNodeId": P4_G2["id"],
+                "ownerNodeId": P4_G2["id"],
+                "resumeNodeId": P6["id"],
+                "rerunNodeIds": [P6["id"]],
+                "excludedNodeIds": [],
+                "reason": "Browser assertion failed",
+                "generation": 2,
+            },
+            projected["activeFailureRoute"],
+        )
+
     def test_seeds_observed_agents_without_inventing_relationships(self):
         projected = project_flow(
             events=[],
@@ -312,6 +354,49 @@ class RetentionAndRecoveryTests(unittest.TestCase):
         self.assertEqual(1, len(orchestrators))
         self.assertEqual(2, orchestrators[0]["generation"])
         self.assertEqual("running", orchestrators[0]["liveness"])
+
+    def test_stale_controller_recovery_cannot_replace_newer_session_binding(self):
+        recovered = assignment(
+            "orchestrator",
+            "Orchestrator",
+            "P1",
+            "session-p1-recovered",
+            "Route ready work",
+        )
+        stale = assignment(
+            "orchestrator",
+            "Orchestrator",
+            "P1",
+            "session-p1-stale",
+            "Route ready work",
+        )
+        projected = project_flow(
+            events=[
+                event(
+                    "CONTROLLER_RECOVERED",
+                    "evt-recovered-g2",
+                    2,
+                    "2026-08-07T01:00:02Z",
+                    assignment=recovered,
+                ),
+                event(
+                    "CONTROLLER_RECOVERED",
+                    "evt-stale-g1",
+                    1,
+                    "2026-08-07T01:00:03Z",
+                    assignment=stale,
+                ),
+            ],
+            live_agents=[agent("session-p1-recovered")],
+            p1_session_id="session-p1-recovered",
+        )
+        orchestrator = next(
+            node for node in projected["nodes"] if node["id"] == "orchestrator"
+        )
+
+        self.assertEqual(2, orchestrator["generation"])
+        self.assertEqual("2026-08-07T01:00:02Z", orchestrator["lastActivityAt"])
+        self.assertEqual("running", orchestrator["liveness"])
 
 
 if __name__ == "__main__":
