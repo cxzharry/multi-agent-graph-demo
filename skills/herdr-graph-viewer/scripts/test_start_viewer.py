@@ -3339,5 +3339,58 @@ class StartViewerTest(unittest.TestCase):
         )
 
 
+class DocumentationContractTest(unittest.TestCase):
+    def test_skill_documents_complete_p1_event_commands_and_boundaries(self):
+        skill = SCRIPT.parents[1].joinpath("SKILL.md").read_text(encoding="utf-8")
+
+        for kind in (
+            "CONTROL_DISPATCH",
+            "ARTIFACT_HANDOFF",
+            "ASSIGNMENT_RESULT",
+            "REWORK_ROUTE",
+        ):
+            self.assertIn(f"--kind {kind}", skill)
+        for argument in (
+            "--event-id",
+            "--at",
+            "--generation",
+            "--source",
+            "--target",
+            "--assignment",
+            "--result",
+            "--artifact",
+            "--reason",
+        ):
+            self.assertIn(argument, skill)
+        for requirement in (
+            "Workers report results to P1",
+            "never dispatch downstream agents directly",
+            "Viewer not invoked",
+            "never blocks work",
+            "non-orchestrator",
+            "No manifest or brainstorming",
+            "global hook",
+            "raw log",
+            "herdr-orchestrator",
+        ):
+            self.assertIn(requirement, skill)
+
+    def test_readme_explains_returned_emitter_metadata_and_zero_cost_opt_in(self):
+        readme = SCRIPT.parents[3].joinpath("README.md").read_text(encoding="utf-8")
+
+        for requirement in (
+            "flowJournal",
+            "emitCommand",
+            "Viewer not invoked",
+            "telemetry failure",
+            "non-orchestrator",
+            "No manifest or brainstorming",
+            "global hook",
+            "raw log",
+            "herdr-orchestrator",
+        ):
+            self.assertIn(requirement, readme)
+
+
 if __name__ == "__main__":
     unittest.main()

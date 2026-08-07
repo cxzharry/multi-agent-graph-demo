@@ -93,20 +93,40 @@ and transparently restarted in their existing ordinary panes. When both are
 stale, the server restarts before the publisher. Recovery is restricted to the
 current Herdr workspace and does not clear valid snapshot or event history.
 
+### Optional event-backed workflow recording
+
+A ready launcher result includes the exact absolute `flowJournal` path and an
+`emitCommand` prefix bound to that journal, workspace, and run. The current P1
+appends an event-specific ID, timestamp, generation, and semantic payload only
+when a control dispatch, artifact handoff, assignment result, or rework route
+actually occurs. Workers report to P1; they do not dispatch downstream agents.
+
+This behavior remains explicitly opt-in:
+
+- **Viewer not invoked:** no event command runs and event-recording overhead is
+  zero.
+- A journal or telemetry failure never blocks work.
+- A non-orchestrator A-to-B flow uses the same event contract.
+- No manifest or brainstorming is required for a real transition.
+- Never add a global hook, scan a raw log, or edit the installed
+  `herdr-orchestrator` to capture events.
+
+The launcher creates only the exact workspace/run journal directory and passes
+that identity to the publisher. It does not fabricate a startup event. Reuse
+requires the same resolved journal, so another workspace's publisher is neither
+reused nor stopped.
+
 ### Observed vs declared topology
 
-The adapter reuses its existing two-second poll to emit bounded, timestamped
-lifecycle events (`NODE_OBSERVED`, `NODE_STATUS_CHANGED`,
-`NODE_ASSIGNEE_CHANGED`, `NODE_GENERATION_CHANGED`, `NODE_REMOVED`) for every
-observed node — never raw prompt, command, tool, token, or log activity.
-Unchanged polls publish nothing.
+The publishers observe workspace-local liveness separately from assignment
+results. Explicit journal events supply real dispatch, artifact, result, and
+rework facts without streaming raw prompt, command, tool, token, or log
+activity. Unchanged polls add nothing.
 
-Session mode and the synthesized operational graph observe nodes and statuses
-but have no trusted workflow-edge source, so they draw **no** edges: P1 stays in
-layer 0, observed agents in layer 1, and the viewer shows an `Observed
-topology — relationships unavailable` notice. A supplied custom manifest is the
-only exact topology source; its authored edges, gates, and failure loops render
-unchanged with no notice.
+Session mode and the synthesized operational graph never guess workflow edges.
+Without journal facts they report relationships as unavailable or empty. A
+supplied custom manifest remains an exact declared topology source; its authored
+edges, gates, and failure loops render unchanged.
 
 ## Verification
 
