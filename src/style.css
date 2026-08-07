@@ -507,6 +507,10 @@ select {
   margin-top: 60px;
 }
 
+.role-node-no-task.has-live-facts .role-status {
+  margin-top: 48px;
+}
+
 .role-status {
   display: flex;
   align-items: center;
@@ -519,6 +523,69 @@ select {
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
+}
+
+.role-badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.liveness-badge,
+.result-badge {
+  padding: 2px 5px;
+  border: 1px solid #3a4552;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.liveness-badge-running {
+  border-color: rgb(100 200 155 / 48%);
+  color: #78d6ad;
+}
+
+.liveness-badge-idle {
+  border-color: #456278;
+  color: #9cb7cc;
+}
+
+.liveness-badge-offline {
+  border-color: #343e4b;
+  color: #7f8a99;
+}
+
+.liveness-badge-stale,
+.result-badge-rework,
+.result-badge-blocked {
+  border-color: #6d5c3d;
+  color: #d8a84f;
+}
+
+.result-badge-pass {
+  border-color: #456278;
+  color: #9cb7cc;
+}
+
+.result-badge-fail {
+  border-color: #9b503f;
+  color: #ef8c75;
+}
+
+.result-badge-skipped {
+  border-color: #343e4b;
+  color: #7f8a99;
+}
+
+.activity-time {
+  margin-left: auto;
+  color: #707c8c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .role-id {
@@ -597,6 +664,52 @@ select {
 .status-pending .status-dot,
 .status-skipped .status-dot {
   background: #566170;
+}
+
+.role-node.has-live-facts.liveness-running {
+  border-color: #4d9a7a;
+  background: #17241f;
+  box-shadow:
+    0 12px 30px rgb(0 0 0 / 22%),
+    inset 0 0 0 1px rgb(100 200 155 / 10%);
+}
+
+.role-node.has-live-facts.liveness-running .status-dot {
+  background: #64c89b;
+  box-shadow: 0 0 0 4px rgb(100 200 155 / 9%);
+}
+
+.role-node.has-live-facts.liveness-idle {
+  border-color: #456278;
+  background: #151c23;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 22%);
+}
+
+.role-node.has-live-facts.liveness-idle .status-dot {
+  background: #8fa9c0;
+  box-shadow: none;
+}
+
+.role-node.has-live-facts.liveness-offline {
+  border-color: #2b333e;
+  background: #14181e;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 22%);
+}
+
+.role-node.has-live-facts.liveness-offline .status-dot {
+  background: #566170;
+  box-shadow: none;
+}
+
+.role-node.has-live-facts.liveness-stale {
+  border-color: #6d5c3d;
+  background: #211e17;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 22%);
+}
+
+.role-node.has-live-facts.liveness-stale .status-dot {
+  background: #d8a84f;
+  box-shadow: none;
 }
 
 .role-handle {
@@ -737,5 +850,9 @@ select {
 
   .role-node-no-task .role-status {
     margin-top: 80px;
+  }
+
+  .role-node-no-task.has-live-facts .role-status {
+    margin-top: 48px;
   }
 }

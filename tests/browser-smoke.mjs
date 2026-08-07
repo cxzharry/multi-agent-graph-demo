@@ -537,6 +537,68 @@ try {
       message: `Observed lifecycle event ${index + 1}`,
     })),
   };
+  const eventBackedLiveness = {
+    ...structuredClone(compact),
+    flowId: 'live-session',
+    relationshipMode: 'event-backed',
+    spaceName: 'herdr-orchestrator',
+    shortName: 'event-backed',
+    scopeId: 'herdr:wK',
+    runId: 'event-backed-liveness',
+    generatedAt: recentIsoTime,
+    title: 'Event-backed liveness',
+    nodes: [
+      {
+        id: 'orchestrator',
+        role: 'p1_orchestrator',
+        assignee: 'p1_orchestrator_wk',
+        layer: 0,
+        status: 'passed',
+        liveness: 'running',
+        lastActivityAt: recentIsoTime,
+        task: 'Route current work',
+        generation: 1,
+      },
+      {
+        id: 'implementation-ui:g1',
+        role: 'p2_impl',
+        assignee: 'p2_impl_wk',
+        layer: 1,
+        status: 'passed',
+        liveness: 'offline',
+        result: 'pass',
+        lastActivityAt: recentIsoTime,
+        task: 'Implement protocol',
+        generation: 1,
+      },
+      {
+        id: 'implementation-visual:g2',
+        role: 'p4_impl',
+        assignee: 'p4_impl_wk',
+        layer: 1,
+        status: 'retrying',
+        liveness: 'running',
+        result: 'rework',
+        lastActivityAt: recentIsoTime,
+        task: 'Repair visual finding',
+        generation: 2,
+      },
+      {
+        id: 'independent-qc:g1',
+        role: 'p6_review',
+        assignee: 'p6_review_wk',
+        layer: 2,
+        status: 'failed',
+        liveness: 'offline',
+        result: 'fail',
+        lastActivityAt: recentIsoTime,
+        task: 'Review candidate',
+        generation: 1,
+      },
+    ],
+    edges: [],
+    events: [],
+  };
   const historyHardening = {
     ...structuredClone(branched),
     spaceName: undefined,
@@ -571,6 +633,7 @@ try {
   for (const collision of selectorCollisions) await postSnapshot(baseUrl, collision);
   for (const collision of scopeCollisions) await postSnapshot(baseUrl, collision);
   await postSnapshot(baseUrl, liveDensity);
+  await postSnapshot(baseUrl, eventBackedLiveness);
   await postSnapshot(baseUrl, expiringPresence);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
@@ -800,6 +863,78 @@ try {
     `All timestamp forms must render as ${recentClockLabel}: ${personaTimelineMeta.join(', ')}`,
   );
   await page.locator('.snapshot-time').getByText(recentClockLabel).waitFor();
+
+  for (const viewport of [
+    {width: 1440, height: 1000},
+    {width: 1024, height: 900},
+    {width: 390, height: 844},
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(
+      `${baseUrl}/?${new URLSearchParams({
+        scopeId: eventBackedLiveness.scopeId,
+        runId: eventBackedLiveness.runId,
+      }).toString()}`,
+    );
+    await waitForNodeCount(page, eventBackedLiveness.nodes.length);
+
+    const expectedNodes = [
+      ['orchestrator', 'running', null, 'P1'],
+      ['implementation-ui:g1', 'offline', 'pass', 'P2'],
+      ['implementation-visual:g2', 'running', 'rework', 'P4'],
+      ['independent-qc:g1', 'offline', 'fail', 'P6'],
+    ];
+    for (const [nodeId, liveness, result, assignee] of expectedNodes) {
+      const node = page.locator(`[data-node-id="${nodeId}"]`);
+      assert.equal(await node.getAttribute('data-liveness'), liveness);
+      assert.equal(await node.getAttribute('data-result'), result);
+      assert.equal(await node.locator('.assignee-chip').textContent(), assignee);
+      assert.equal(
+        await node.locator('.liveness-badge').textContent(),
+        liveness.toUpperCase(),
+      );
+      assert.equal(await node.locator('.result-badge').count(), result ? 1 : 0);
+      if (result) {
+        assert.equal(
+          await node.locator('.result-badge').textContent(),
+          result.toUpperCase(),
+        );
+      }
+      const activity = node.locator('.activity-time');
+      assert.equal(await activity.textContent(), 'just now');
+      assert.equal(await activity.getAttribute('title'), recentIsoTime);
+    }
+
+    const p1Text = await page.locator('[data-node-id="orchestrator"]').innerText();
+    assert.ok(!p1Text.includes('PASSED'));
+    const badgeContainment = await page
+      .locator('[data-testid="role-node"]')
+      .evaluateAll(nodes =>
+        nodes.flatMap(node => {
+          const nodeBounds = node.getBoundingClientRect();
+          return [...node.querySelectorAll('.liveness-badge, .result-badge')].map(
+            badge => {
+              const badgeBounds = badge.getBoundingClientRect();
+              return {
+                nodeId: node.getAttribute('data-node-id'),
+                badge: badge.textContent,
+                inside:
+                badgeBounds.left >= nodeBounds.left &&
+                badgeBounds.right <= nodeBounds.right &&
+                badgeBounds.top >= nodeBounds.top &&
+                  badgeBounds.bottom <= nodeBounds.bottom,
+                nodeBounds: nodeBounds.toJSON(),
+                badgeBounds: badgeBounds.toJSON(),
+              };
+            },
+          );
+        }),
+      );
+    assert.ok(
+      badgeContainment.every(metric => metric.inside),
+      `${viewport.width}x${viewport.height} liveness/result badges must remain inside cards: ${JSON.stringify(badgeContainment)}`,
+    );
+  }
 
   await page.setViewportSize({width: 390, height: 844});
   await page.goto(

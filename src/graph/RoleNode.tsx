@@ -1,6 +1,6 @@
 import {Handle, Position, type Node, type NodeProps} from '@xyflow/react';
 
-import type {RoleNode as RoleNodeData} from './types';
+import type {AgentLiveness, RoleNode as RoleNodeData} from './types';
 
 export type RoleFlowNode = Node<
   RoleNodeData & {synthetic: boolean} & Record<string, unknown>,
@@ -9,6 +9,8 @@ export type RoleFlowNode = Node<
 
 export function RoleNode({data}: NodeProps<RoleFlowNode>) {
   const showTask = !data.synthetic;
+  const liveness = data.liveness ?? legacyLiveness(data.status);
+  const hasLiveFacts = data.liveness !== undefined;
   const roleLabel = data.synthetic ? compactRoleLabel(data.role) : data.role;
   const assigneeLabel = data.synthetic
     ? compactAssigneeLabel(data.role, data.assignee)
@@ -16,8 +18,10 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
 
   return (
     <article
-      className={`role-node status-${data.status}${showTask ? '' : ' role-node-no-task'}`}
+      className={`role-node status-${data.status} liveness-${liveness}${hasLiveFacts ? ' has-live-facts' : ''}${showTask ? '' : ' role-node-no-task'}`}
       data-node-id={data.id}
+      data-liveness={liveness}
+      data-result={data.result}
       data-status={data.status}
       data-testid="role-node"
     >
@@ -30,7 +34,9 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
       <div className="role-node-heading">
         <span className="status-dot" aria-hidden="true" />
         <div>
-          <h3>{roleLabel}</h3>
+          <h3 aria-label={`Role ${data.role}`} title={data.role}>
+            {roleLabel}
+          </h3>
           <p>Generation {data.generation}</p>
         </div>
         <span
@@ -43,7 +49,29 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
       </div>
       {showTask && <p className="role-task">{data.task}</p>}
       <div className="role-status">
-        <span>{data.status}</span>
+        {hasLiveFacts ? (
+          <div className="role-badges">
+            <span className={`liveness-badge liveness-badge-${liveness}`}>
+              {liveness.toUpperCase()}
+            </span>
+            {data.result && (
+              <span className={`result-badge result-badge-${data.result}`}>
+                {data.result.toUpperCase()}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span>{data.status}</span>
+        )}
+        {data.lastActivityAt && (
+          <time
+            className="activity-time"
+            dateTime={data.lastActivityAt}
+            title={data.lastActivityAt}
+          >
+            {relativeActivity(data.lastActivityAt)}
+          </time>
+        )}
         {!data.synthetic && <span className="role-id">{data.id}</span>}
       </div>
       <Handle
@@ -54,6 +82,21 @@ export function RoleNode({data}: NodeProps<RoleFlowNode>) {
       />
     </article>
   );
+}
+
+function legacyLiveness(status: RoleNodeData['status']): AgentLiveness {
+  if (status === 'running' || status === 'retrying') return 'running';
+  if (status === 'blocked' || status === 'stale') return 'stale';
+  if (status === 'pending') return 'idle';
+  return 'offline';
+}
+
+function relativeActivity(value: string): string {
+  const elapsed = Math.max(0, Date.now() - Date.parse(value));
+  if (elapsed < 60_000) return 'just now';
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
+  return `${Math.floor(elapsed / 86_400_000)}d ago`;
 }
 
 export function compactRoleLabel(role: string): string {
