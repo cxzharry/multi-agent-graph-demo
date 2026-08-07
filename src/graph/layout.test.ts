@@ -291,6 +291,101 @@ describe('layoutRoleGraph', () => {
       artifactEdges.map(edge => edge.id).sort(),
     );
   });
+
+  test('wraps a dense event-backed rank while keeping current workers level', () => {
+    const denseNodes: RoleNode[] = [
+      ['orchestrator', 'p1_orchestrator', 'P1', 1],
+      ['flow-publisher:g2', 'p2_impl', 'P2', 1],
+      ['launcher-emitter:g1', 'p3_impl', 'P3', 1],
+      ['protocol-visual:g1', 'p4_impl', 'P4', 1],
+      ['protocol-visual:g2', 'p4_impl', 'P4', 2],
+      ['integration:g2', 'p5_integration', 'P5', 2],
+      ['independent-review:g2', 'p6_review', 'P6', 2],
+      ['functional-qc:g1', 'p7_qc', 'P7', 1],
+      ['design-qc:g1', 'p8_design', 'P8', 1],
+      ['persona-qc:g1', 'p9_persona', 'P9', 1],
+      ...Array.from({length: 12}, (_, index) => [
+        `observed-${index}`,
+        `observed_agent_${index}`,
+        `agent-${index}`,
+        1,
+      ]),
+    ].map(([id, role, assignee, generation]) => ({
+      id: id as string,
+      role: role as string,
+      assignee: assignee as string,
+      layer: 1,
+      status: 'pending' as const,
+      task: 'Participate in the current run',
+      generation: generation as number,
+    }));
+    const denseEdges: RoleEdge[] = [
+      ...[
+        'flow-publisher:g2',
+        'launcher-emitter:g1',
+        'protocol-visual:g1',
+        'protocol-visual:g2',
+      ].map(source => ({
+        id: `${source}-to-integration`,
+        source,
+        target: 'integration:g2',
+        kind: 'forward' as const,
+        status: 'passed' as const,
+      })),
+      {
+        id: 'integration-to-review',
+        source: 'integration:g2',
+        target: 'independent-review:g2',
+        kind: 'forward',
+        status: 'passed',
+      },
+      ...[
+        'flow-publisher:g2',
+        'launcher-emitter:g1',
+        'protocol-visual:g1',
+        'protocol-visual:g2',
+      ].map(target => ({
+        id: `orchestrator-to-${target}`,
+        source: 'orchestrator',
+        target,
+        kind: 'control' as const,
+        status:
+          target === 'protocol-visual:g2'
+            ? ('active' as const)
+            : ('inactive' as const),
+      })),
+      {
+        id: 'review-to-current-p4',
+        source: 'independent-review:g2',
+        target: 'protocol-visual:g2',
+        kind: 'return',
+        status: 'active',
+      },
+    ];
+
+    const result = layoutRoleGraph(denseNodes, denseEdges, 'event-backed');
+    const positions = new Map(
+      result.positionedNodes.map(node => [node.id, node.position]),
+    );
+    const rowSizes = new Map<number, number>();
+    for (const node of result.positionedNodes) {
+      rowSizes.set(node.position.y, (rowSizes.get(node.position.y) ?? 0) + 1);
+    }
+
+    expect(Math.max(...rowSizes.values())).toBeLessThanOrEqual(3);
+    expect(positions.get('flow-publisher:g2')!.y).toBe(
+      positions.get('launcher-emitter:g1')!.y,
+    );
+    expect(positions.get('launcher-emitter:g1')!.y).toBe(
+      positions.get('protocol-visual:g2')!.y,
+    );
+    expect(positions.get('protocol-visual:g2')!.y).toBeLessThan(
+      positions.get('integration:g2')!.y,
+    );
+    expect(positions.get('integration:g2')!.y).toBeLessThan(
+      positions.get('independent-review:g2')!.y,
+    );
+  });
 });
 
 describe('getFeedbackPath', () => {

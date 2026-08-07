@@ -208,15 +208,29 @@ function App() {
     return Math.max(720, graphBottom + 120);
   }, [nodes, relationshipMode, responsiveGraphMode, snapshot]);
   const edges = useMemo<Edge[]>(() => {
-    const forwardEdgesByTarget = new Map<string, typeof layout.forwardEdges>();
+    const nodeRows = new Map(
+      layout.positionedNodes.map(node => [node.id, node.position.y]),
+    );
+    const nodeColumns = new Map(
+      layout.positionedNodes.map(node => [node.id, node.position.x]),
+    );
+    const forwardEdgesByTargetRow = new Map<
+      string,
+      typeof layout.forwardEdges
+    >();
     for (const edge of layout.forwardEdges) {
-      const siblings = forwardEdgesByTarget.get(edge.target) ?? [];
+      const key = `${edge.target}\0${nodeRows.get(edge.source) ?? 0}`;
+      const siblings = forwardEdgesByTargetRow.get(key) ?? [];
       siblings.push(edge);
-      forwardEdgesByTarget.set(edge.target, siblings);
+      forwardEdgesByTargetRow.set(key, siblings);
     }
     const forwardEdges: Edge[] = layout.forwardEdges.map(edge => {
-      const labels = relationshipLabels(edge);
-      const siblings = forwardEdgesByTarget.get(edge.target) ?? [edge];
+      const labels = relationshipLabels(
+        edge,
+        responsiveGraphMode === 'mobile',
+      );
+      const key = `${edge.target}\0${nodeRows.get(edge.source) ?? 0}`;
+      const siblings = forwardEdgesByTargetRow.get(key) ?? [edge];
       return {
         id: edge.id,
         source: edge.source,
@@ -228,7 +242,7 @@ function App() {
         data: {
           label: labels.visible,
           labelOffsetY:
-            siblings.length > 1 ? siblings.indexOf(edge) * 24 : 0,
+            (siblings.indexOf(edge) - (siblings.length - 1) / 2) * 12,
           labelTitle: labels.full,
           muted: edge.status !== 'active',
         },
@@ -238,29 +252,41 @@ function App() {
         },
       };
     });
-    const controlEdges: Edge[] = (snapshot?.edges ?? [])
-      .filter(edge => edge.kind === 'control')
-      .map(edge => {
-        const labels = relationshipLabels(edge);
-        return {
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          type: 'relationship',
-          animated: edge.status === 'active',
-          className: `control-edge edge-${edge.status}`,
-          data: {
-            label: labels.visible,
-            labelProgress: 0.4,
-            labelTitle: labels.full,
-            muted: edge.status !== 'active',
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: '#748298',
-          },
-        };
-      });
+    const controlFacts = (snapshot?.edges ?? []).filter(
+      edge => edge.kind === 'control',
+    );
+    const controlFactsByColumn = new Map<number, typeof controlFacts>();
+    for (const edge of controlFacts) {
+      const column = nodeColumns.get(edge.target) ?? 0;
+      const siblings = controlFactsByColumn.get(column) ?? [];
+      siblings.push(edge);
+      controlFactsByColumn.set(column, siblings);
+    }
+    const controlEdges: Edge[] = controlFacts.map(edge => {
+      const labels = relationshipLabels(edge);
+      const siblings =
+        controlFactsByColumn.get(nodeColumns.get(edge.target) ?? 0) ?? [edge];
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: 'relationship',
+        animated: edge.status === 'active',
+        className: `control-edge edge-${edge.status}`,
+        data: {
+          label: labels.visible,
+          labelOffsetX:
+            siblings.indexOf(edge) *
+            (responsiveGraphMode === 'mobile' ? 72 : 36),
+          labelTitle: labels.full,
+          muted: edge.status !== 'active',
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: '#748298',
+        },
+      };
+    });
     const returnEdges: FeedbackFlowEdge[] = (snapshot?.edges ?? [])
       .filter(edge => edge.kind === 'return')
       .map(edge => {
@@ -317,6 +343,7 @@ function App() {
   }, [
     layout.feedbackGutterX,
     layout.forwardEdges,
+    layout.positionedNodes,
     responsiveGraphMode,
     snapshot,
   ]);
@@ -594,11 +621,14 @@ function feedbackGutterX(
   return mode === 'mobile' ? 366 : mode === 'tablet' ? 960 : desktopGutterX;
 }
 
-function relationshipLabels(edge: {
-  occurrenceCount?: number;
-  lastEventAt?: string;
-  reason?: string;
-}): {full?: string; visible?: string} {
+function relationshipLabels(
+  edge: {
+    occurrenceCount?: number;
+    lastEventAt?: string;
+    reason?: string;
+  },
+  mobile = false,
+): {full?: string; visible?: string} {
   const fullParts = [
     edge.reason,
     edge.occurrenceCount && `×${edge.occurrenceCount}`,
@@ -606,9 +636,11 @@ function relationshipLabels(edge: {
   ].filter(Boolean);
   const reasonWords = edge.reason?.split(/\s+/) ?? [];
   const compactReason =
-    reasonWords.length > 2
-      ? `${reasonWords[0]} ${reasonWords[reasonWords.length - 1]}`
-      : edge.reason;
+    mobile && reasonWords.length > 1
+      ? reasonWords[0]
+      : reasonWords.length > 2
+        ? `${reasonWords[0]} ${reasonWords[reasonWords.length - 1]}`
+        : edge.reason;
   const visibleParts = [
     compactReason,
     edge.occurrenceCount && `×${edge.occurrenceCount}`,

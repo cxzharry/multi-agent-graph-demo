@@ -747,7 +747,7 @@ select {
   stroke-width: 2;
 }
 
-.react-flow__edge.control-edge .react-flow__edge-path {
+.react-flow__edge.control-edge.edge-active .react-flow__edge-path {
   stroke-dasharray: 7 5;
 }
 

@@ -18,6 +18,7 @@ export type FeedbackEdgeData = {
 
 export type RelationshipEdgeData = {
   label?: string;
+  labelOffsetX?: number;
   labelOffsetY?: number;
   labelProgress?: number;
   labelTitle?: string;
@@ -83,7 +84,9 @@ export function RelationshipEdge({
   data,
 }: EdgeProps<RelationshipFlowEdge>) {
   const [path] = getStraightPath({sourceX, sourceY, targetX, targetY});
-  const progress = data?.labelProgress ?? 0.14;
+  const verticalDistance = Math.abs(targetY - sourceY);
+  const progress =
+    data?.labelProgress ?? Math.min(0.3, 22 / Math.max(verticalDistance, 1));
 
   return (
     <>
@@ -99,7 +102,11 @@ export function RelationshipEdge({
           edgeId={id}
           label={data.label}
           title={data.labelTitle}
-          x={sourceX + (targetX - sourceX) * progress}
+          x={
+            sourceX +
+            (targetX - sourceX) * progress +
+            (data.labelOffsetX ?? 0)
+          }
           y={
             sourceY +
             (targetY - sourceY) * progress +

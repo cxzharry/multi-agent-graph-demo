@@ -7,6 +7,7 @@ export const ROLE_NODE_HEIGHT = 148;
 const NODE_SEPARATION = 52;
 const LAYER_SEPARATION = 88;
 const FEEDBACK_GUTTER_MARGIN = 96;
+const MAX_EVENT_BACKED_ROW_SIZE = 3;
 
 export type PositionedRoleNode = RoleNode & {
   position: {x: number; y: number};
@@ -84,14 +85,19 @@ export function layoutRoleGraph(
   const widestLayer = Math.max(
     ...layerValues.map(layerValue => {
       const group = nodesByLayer.get(layerValue)!;
+      const nodeCount =
+        relationshipMode === 'event-backed'
+          ? Math.min(group.length, MAX_EVENT_BACKED_ROW_SIZE)
+          : group.length;
       return (
-        group.length * ROLE_NODE_WIDTH +
-        (group.length - 1) * NODE_SEPARATION
+        nodeCount * ROLE_NODE_WIDTH +
+        (nodeCount - 1) * NODE_SEPARATION
       );
     }),
   );
   const positionedNodes: PositionedRoleNode[] = [];
-  for (const [layerIndex, layerValue] of layerValues.entries()) {
+  let rowIndex = 0;
+  for (const layerValue of layerValues) {
     const group = nodesByLayer.get(layerValue)!;
     group.sort((left, right) => {
       const leftX = graph.node(left.id).x ?? 0;
@@ -99,25 +105,33 @@ export function layoutRoleGraph(
       return leftX - rightX || left.id.localeCompare(right.id);
     });
 
-    const candidateCenters = group.map(node => graph.node(node.id).x ?? 0);
-    const averageCenter =
-      candidateCenters.reduce((sum, x) => sum + x, 0) / candidateCenters.length;
-    const groupWidth =
-      group.length * ROLE_NODE_WIDTH + (group.length - 1) * NODE_SEPARATION;
-    const groupLeft =
+    const rows =
       relationshipMode === 'event-backed'
-        ? (widestLayer - groupWidth) / 2
-        : averageCenter - groupWidth / 2;
+        ? eventBackedRows(group)
+        : [group];
+    for (const row of rows) {
+      const candidateCenters = row.map(node => graph.node(node.id).x ?? 0);
+      const averageCenter =
+        candidateCenters.reduce((sum, x) => sum + x, 0) /
+        candidateCenters.length;
+      const rowWidth =
+        row.length * ROLE_NODE_WIDTH + (row.length - 1) * NODE_SEPARATION;
+      const rowLeft =
+        relationshipMode === 'event-backed'
+          ? (widestLayer - rowWidth) / 2
+          : averageCenter - rowWidth / 2;
 
-    group.forEach((node, groupIndex) => {
-      positionedNodes.push({
-        ...node,
-        position: {
-          x: groupLeft + groupIndex * (ROLE_NODE_WIDTH + NODE_SEPARATION),
-          y: layerIndex * (ROLE_NODE_HEIGHT + LAYER_SEPARATION),
-        },
+      row.forEach((node, groupIndex) => {
+        positionedNodes.push({
+          ...node,
+          position: {
+            x: rowLeft + groupIndex * (ROLE_NODE_WIDTH + NODE_SEPARATION),
+            y: rowIndex * (ROLE_NODE_HEIGHT + LAYER_SEPARATION),
+          },
+        });
       });
-    });
+      rowIndex += 1;
+    }
   }
 
   const leftmost = Math.min(...positionedNodes.map(node => node.position.x));
@@ -143,6 +157,40 @@ export function layoutRoleGraph(
 
 function isP1Node(node: RoleNode): boolean {
   return /^P1$/i.test(node.assignee) || /^p1(?:[_-]|$)/i.test(node.role);
+}
+
+function eventBackedRows(group: RoleNode[]): RoleNode[][] {
+  const currentByPosition = new Map<number, RoleNode>();
+  for (const node of group) {
+    const match = /^P(\d+)$/i.exec(node.assignee);
+    if (!match) continue;
+    const position = Number(match[1]);
+    const current = currentByPosition.get(position);
+    if (
+      !current ||
+      node.generation > current.generation ||
+      (node.generation === current.generation && node.id > current.id)
+    ) {
+      currentByPosition.set(position, node);
+    }
+  }
+  const current = [...currentByPosition.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, node]) => node);
+  const currentIds = new Set(current.map(node => node.id));
+  const ordered = [
+    ...current,
+    ...group.filter(node => !currentIds.has(node.id)),
+  ];
+  const rows: RoleNode[][] = [];
+  for (
+    let index = 0;
+    index < ordered.length;
+    index += MAX_EVENT_BACKED_ROW_SIZE
+  ) {
+    rows.push(ordered.slice(index, index + MAX_EVENT_BACKED_ROW_SIZE));
+  }
+  return rows;
 }
 
 function deriveLayers(nodes: RoleNode[], edges: RoleEdge[]) {

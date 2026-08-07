@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 
 import {chromium} from 'playwright';
 
@@ -73,6 +74,225 @@ async function postPresence(baseUrl, presence) {
     body: JSON.stringify(presence),
   });
   assert.equal(response.status, 202, await response.text());
+}
+
+async function publishRealFlowSnapshot({baseUrl, temporaryDirectory}) {
+  const producerRoot = process.env.REAL_PUBLISHER_ROOT;
+  const statePath = process.env.REAL_PUBLISHER_STATE;
+  assert.equal(
+    Boolean(producerRoot),
+    Boolean(statePath),
+    'REAL_PUBLISHER_ROOT and REAL_PUBLISHER_STATE must be supplied together',
+  );
+  if (!producerRoot || !statePath) return null;
+
+  const emitter = path.join(
+    producerRoot,
+    'skills/herdr-graph-viewer/scripts/emit_event.py',
+  );
+  const publisher = path.join(producerRoot, 'adapters/herdr/publisher.py');
+  assert.ok(existsSync(emitter), `Missing real event emitter: ${emitter}`);
+  assert.ok(existsSync(publisher), `Missing real publisher: ${publisher}`);
+
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  const publisherState = structuredClone(state);
+  if (publisherState.lanes?.protocol_visual_runtime_remediation) {
+    delete publisherState.lanes.protocol_visual_runtime_remediation;
+    publisherState.slots.P4.lane_id = 'protocol_visual_remediation';
+    publisherState.slots.P4.status = 'DONE';
+  }
+  const publisherStatePath = path.join(
+    temporaryDirectory,
+    'real-publisher-state.json',
+  );
+  await writeFile(publisherStatePath, JSON.stringify(publisherState));
+  const workspaceId = state.workspace_id;
+  const runId = state.run?.contract_id;
+  assert.equal(typeof workspaceId, 'string');
+  assert.equal(typeof runId, 'string');
+  const session = position => {
+    const value =
+      position === 'P1'
+        ? state.controller?.session_id
+        : state.slots?.[position]?.session_id;
+    assert.equal(typeof value, 'string', `Missing ${position} session`);
+    return value;
+  };
+  const assignment = (id, role, slot, task) =>
+    JSON.stringify({id, role, slot, agentSessionId: session(slot), task});
+  const p1 = assignment(
+    'orchestrator',
+    'Orchestrator',
+    'P1',
+    'Route ready work',
+  );
+  const p2 = assignment(
+    'flow-publisher:g2',
+    'Flow Publisher',
+    'P2',
+    'Publish event flow',
+  );
+  const p3 = assignment(
+    'launcher-emitter:g1',
+    'Launcher and Emitter',
+    'P3',
+    'Launch and emit events',
+  );
+  const p4g1 = assignment(
+    'protocol-visual:g1',
+    'Protocol and Visual',
+    'P4',
+    'Render Option A',
+  );
+  const p4g2 = assignment(
+    'protocol-visual:g2',
+    'Protocol and Visual',
+    'P4',
+    'Remediate visual finding',
+  );
+  const p5 = assignment(
+    'integration:g2',
+    'Integration',
+    'P5',
+    'Integrate candidate',
+  );
+  const p6 = assignment(
+    'independent-review:g2',
+    'Independent Review',
+    'P6',
+    'Review candidate',
+  );
+  const journal = path.join(temporaryDirectory, 'real-flow-events.jsonl');
+  const base = Date.now() - 20_000;
+  let cursor = 0;
+  const emit = (kind, generation, extra) => {
+    cursor += 1;
+    const emitted = spawnSync(
+      'python3',
+      [
+        '-B',
+        emitter,
+        '--journal',
+        journal,
+        '--workspace-id',
+        workspaceId,
+        '--run-id',
+        runId,
+        '--event-id',
+        `browser-real-${String(cursor).padStart(2, '0')}`,
+        '--at',
+        new Date(base + cursor * 1000).toISOString(),
+        '--kind',
+        kind,
+        '--generation',
+        String(generation),
+        ...extra,
+      ],
+      {cwd: producerRoot, encoding: 'utf8'},
+    );
+    assert.equal(
+      emitted.status,
+      0,
+      `Real ${kind} emission failed: ${emitted.stderr || emitted.stdout}`,
+    );
+  };
+
+  emit('CONTROL_DISPATCH', 1, ['--source', p1, '--target', p2]);
+  emit('CONTROL_DISPATCH', 1, ['--source', p1, '--target', p3]);
+  emit('CONTROL_DISPATCH', 1, ['--source', p1, '--target', p4g1]);
+  for (const [source, commit] of [
+    [p2, 'p2-output'],
+    [p3, 'p3-output'],
+    [p4g1, 'p4-output'],
+  ]) {
+    emit('ARTIFACT_HANDOFF', 1, [
+      '--source',
+      source,
+      '--target',
+      p5,
+      '--artifact',
+      JSON.stringify({commit}),
+    ]);
+    emit('ASSIGNMENT_RESULT', 1, [
+      '--assignment',
+      source,
+      '--result',
+      'PASS',
+    ]);
+  }
+  emit('ARTIFACT_HANDOFF', 1, [
+    '--source',
+    p5,
+    '--target',
+    p6,
+    '--artifact',
+    JSON.stringify({tree: 'candidate-tree'}),
+  ]);
+  emit('ASSIGNMENT_RESULT', 1, [
+    '--assignment',
+    p5,
+    '--result',
+    'PASS',
+  ]);
+  emit('ASSIGNMENT_RESULT', 1, [
+    '--assignment',
+    p6,
+    '--result',
+    'FAIL',
+  ]);
+  emit('REWORK_ROUTE', 2, [
+    '--source',
+    p6,
+    '--target',
+    p4g2,
+    '--reason',
+    'Responsive containment finding',
+  ]);
+  emit('CONTROL_DISPATCH', 2, ['--source', p1, '--target', p4g2]);
+  emit('ARTIFACT_HANDOFF', 2, [
+    '--source',
+    p4g2,
+    '--target',
+    p5,
+    '--artifact',
+    JSON.stringify({commit: 'p4-remediation'}),
+  ]);
+
+  const published = spawnSync(
+    'python3',
+    [
+      '-B',
+      publisher,
+      '--state',
+      publisherStatePath,
+      '--synthesize',
+      '--workspace-id',
+      workspaceId,
+      '--space-name',
+      'herdr-orchestrator',
+      '--endpoint',
+      `${baseUrl}/api/snapshots`,
+      '--replace-current',
+      '--runtime-fingerprint',
+      'browser-smoke-real-publisher',
+      '--flow-journal',
+      journal,
+    ],
+    {cwd: producerRoot, encoding: 'utf8'},
+  );
+  assert.equal(
+    published.status,
+    0,
+    `Real publisher failed: ${published.stderr || published.stdout}`,
+  );
+  const query = new URLSearchParams({
+    scopeId: `herdr:${workspaceId}`,
+    runId,
+  });
+  const response = await fetch(`${baseUrl}/api/snapshot?${query}`);
+  const responseBody = await response.text();
+  assert.equal(response.status, 200, responseBody);
+  return JSON.parse(responseBody);
 }
 
 async function waitForNodeCount(page, count) {
@@ -289,6 +509,18 @@ async function eventBackedGeometry(page) {
         };
       },
     );
+    const nodeOverlaps = [];
+    for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < nodes.length;
+        rightIndex += 1
+      ) {
+        if (overlapArea(nodes[leftIndex].bounds, nodes[rightIndex].bounds) > 1) {
+          nodeOverlaps.push(`${nodes[leftIndex].id}/${nodes[rightIndex].id}`);
+        }
+      }
+    }
     const p1 = nodes.find(node => node.id === 'orchestrator');
     if (!p1) throw new Error('Missing event-backed P1');
     const customLabels = [
@@ -319,17 +551,27 @@ async function eventBackedGeometry(page) {
         );
         if (overlap > 1) {
           labelCollisions.push({
+            leftId: edgeLabels[leftIndex].id,
             left: edgeLabels[leftIndex].text,
+            rightId: edgeLabels[rightIndex].id,
             right: edgeLabels[rightIndex].text,
             overlap,
           });
         }
       }
     }
+    const edgeLabelNodeCollisions = edgeLabels.flatMap(label =>
+      nodes
+        .filter(node => overlapArea(label.bounds, node.bounds) > 1)
+        .map(node => `${label.id}/${node.id}`),
+    );
 
     return {
       scale,
       graphPanel,
+      nodePositions: Object.fromEntries(
+        nodes.map(node => [node.id, node.bounds]),
+      ),
       p1CenterDelta:
         p1.bounds.left + p1.bounds.width / 2 -
         (graphPanel.left + graphPanel.width / 2),
@@ -344,6 +586,7 @@ async function eventBackedGeometry(page) {
       nodeTextCollisions: nodes
         .filter(node => node.textCollisions.length > 0)
         .map(node => `${node.id}:${node.textCollisions.join(',')}`),
+      nodeOverlaps,
       minimumNodeTextSize: Math.min(
         ...nodes.map(node => node.minimumTextSize),
       ),
@@ -355,6 +598,7 @@ async function eventBackedGeometry(page) {
         ...edgeLabels.map(label => label.effectiveTextSize),
       ),
       labelCollisions,
+      edgeLabelNodeCollisions,
     };
   });
 }
@@ -480,6 +724,210 @@ try {
 
   await page.goto(baseUrl);
   await page.locator('[data-testid="empty-state"]').waitFor();
+
+  const realPublisherSnapshot = await publishRealFlowSnapshot({
+    baseUrl,
+    temporaryDirectory,
+  });
+  if (realPublisherSnapshot) {
+    assert.equal(realPublisherSnapshot.relationshipMode, 'event-backed');
+    assert.equal(realPublisherSnapshot.nodes.length, 22);
+    assert.equal(realPublisherSnapshot.edges.length, 10);
+    assert.equal(realPublisherSnapshot.telemetry?.status, 'ok');
+    assert.equal(
+      realPublisherSnapshot.activeFailureRoute?.returnToNodeId,
+      'protocol-visual:g2',
+    );
+    const expectedVisibleLabels = realPublisherSnapshot.edges.length;
+    const expectedControlCount = realPublisherSnapshot.edges.filter(
+      edge => edge.kind === 'control',
+    ).length;
+    const realFailures = [];
+    const realQuery = new URLSearchParams({
+      scopeId: realPublisherSnapshot.scopeId,
+      runId: realPublisherSnapshot.runId,
+    });
+    for (const viewport of [
+      {width: 1440, height: 1000},
+      {width: 1024, height: 900},
+      {width: 390, height: 844},
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto(`${baseUrl}/?${realQuery}`);
+      await waitForNodeCount(page, realPublisherSnapshot.nodes.length);
+      await page.evaluate(
+        () =>
+          new Promise(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+      await page.waitForFunction(
+        expected =>
+          document.querySelectorAll('[data-testid="relationship-label"]')
+            .length === expected,
+        expectedVisibleLabels,
+      );
+      await page.evaluate(
+        () =>
+          new Promise(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
+      await page.waitForFunction(
+        expected =>
+          document.querySelectorAll('[data-testid="relationship-label"]')
+            .length === expected,
+        expectedVisibleLabels,
+      );
+      const geometry = await eventBackedGeometry(page);
+      const edgeMetrics = await page.evaluate(() => {
+        const styles = selector =>
+          [...document.querySelectorAll(selector)].map(edge => {
+            const path = edge.querySelector('.react-flow__edge-path');
+            if (!(path instanceof Element)) throw new Error('Missing edge path');
+            return {
+              className: edge.getAttribute('class') ?? '',
+              dash: getComputedStyle(path).strokeDasharray,
+              opacity: Number.parseFloat(getComputedStyle(edge).opacity),
+              path: path.getAttribute('d') ?? '',
+            };
+          });
+        return {
+          controls: styles('.control-edge'),
+          forwards: styles('.forward-edge'),
+          returns: styles('.return-edge'),
+        };
+      });
+      const size = `${viewport.width}x${viewport.height}`;
+      const positions = geometry.nodePositions;
+      const workerTops = [
+        positions['flow-publisher:g2']?.top,
+        positions['launcher-emitter:g1']?.top,
+        positions['protocol-visual:g2']?.top,
+      ];
+      const p5Top = positions['integration:g2']?.top;
+      const p6Top = positions['independent-review:g2']?.top;
+      const failures = [];
+      if (Math.abs(geometry.p1CenterDelta) > 2) {
+        failures.push(`P1 center delta ${geometry.p1CenterDelta.toFixed(1)}px`);
+      }
+      if (geometry.p1HeaderClearance < 12) {
+        failures.push(
+          `P1 header clearance ${geometry.p1HeaderClearance.toFixed(1)}px`,
+        );
+      }
+      if (geometry.p1ControlOverlap > 1 || geometry.p1GraphMetaOverlap > 1) {
+        failures.push('P1 overlaps graph controls or metadata');
+      }
+      if (geometry.outsideNodes.length > 0) {
+        failures.push(`outside nodes ${geometry.outsideNodes.join(',')}`);
+      }
+      if (geometry.clippedNodeContent.length > 0) {
+        failures.push(
+          `clipped node content ${geometry.clippedNodeContent.join(',')}`,
+        );
+      }
+      if (geometry.nodeTextCollisions.length > 0) {
+        failures.push(
+          `node text collisions ${geometry.nodeTextCollisions.join(';')}`,
+        );
+      }
+      if (geometry.nodeOverlaps.length > 0) {
+        failures.push(`node overlaps ${geometry.nodeOverlaps.join(',')}`);
+      }
+      if (geometry.minimumNodeTextSize < 8) {
+        failures.push(`node text ${geometry.minimumNodeTextSize.toFixed(1)}px`);
+      }
+      if (geometry.edgeLabelCount !== expectedVisibleLabels) {
+        failures.push(
+          `edge labels ${geometry.edgeLabelCount}/${expectedVisibleLabels}`,
+        );
+      }
+      if (geometry.outsideEdgeLabels.length > 0) {
+        failures.push(
+          `outside edge labels ${geometry.outsideEdgeLabels.join(',')}`,
+        );
+      }
+      if (geometry.minimumEdgeLabelTextSize < 8) {
+        failures.push(
+          `edge label text ${geometry.minimumEdgeLabelTextSize.toFixed(1)}px`,
+        );
+      }
+      if (geometry.labelCollisions.length > 0) {
+        failures.push(
+          `edge label collisions ${JSON.stringify(geometry.labelCollisions)}`,
+        );
+      }
+      if (geometry.edgeLabelNodeCollisions.length > 0) {
+        failures.push(
+          `edge label/node collisions ${geometry.edgeLabelNodeCollisions.join(',')}`,
+        );
+      }
+      if (
+        workerTops.some(top => top === undefined) ||
+        Math.max(...workerTops) - Math.min(...workerTops) > 1
+      ) {
+        failures.push(`worker rank ${workerTops.join(',')}`);
+      }
+      if (
+        p5Top === undefined ||
+        p6Top === undefined ||
+        !(Math.max(...workerTops) < p5Top && p5Top < p6Top)
+      ) {
+        failures.push(`artifact ranks workers=${workerTops} P5=${p5Top} P6=${p6Top}`);
+      }
+      const activeControls = edgeMetrics.controls.filter(edge =>
+        edge.className.includes('edge-active'),
+      );
+      const inactiveControls = edgeMetrics.controls.filter(edge =>
+        edge.className.includes('edge-inactive'),
+      );
+      if (
+        edgeMetrics.controls.length !== expectedControlCount ||
+        activeControls.length !== 1 ||
+        activeControls[0]?.dash === 'none' ||
+        inactiveControls.some(edge => edge.dash !== 'none' || edge.opacity >= 1)
+      ) {
+        failures.push(`active control ${JSON.stringify(edgeMetrics.controls)}`);
+      }
+      if (
+        edgeMetrics.forwards.length !== 5 ||
+        edgeMetrics.forwards.some(
+          edge =>
+            edge.dash !== 'none' ||
+            edge.opacity >= 1 ||
+            /[CQ]/.test(edge.path) ||
+            (edge.path.match(/L/g) ?? []).length !== 1,
+        )
+      ) {
+        failures.push(`artifact history ${JSON.stringify(edgeMetrics.forwards)}`);
+      }
+      if (
+        edgeMetrics.returns.length !== 1 ||
+        edgeMetrics.returns[0]?.dash !== 'none'
+      ) {
+        failures.push(`remediation return ${JSON.stringify(edgeMetrics.returns)}`);
+      }
+      realFailures.push(...failures.map(failure => `${size}: ${failure}`));
+      console.log(
+        `real publisher Option A ${size}: ${JSON.stringify({geometry, edgeMetrics})}`,
+      );
+      await mkdir(artifactsDirectory, {recursive: true});
+      await page.screenshot({
+        path: path.join(
+          artifactsDirectory,
+          `real-publisher-option-a-${size}.png`,
+        ),
+        fullPage: true,
+      });
+    }
+    assert.deepEqual(
+      realFailures,
+      [],
+      `Real publisher Option A failures:\n${realFailures.join('\n')}`,
+    );
+    await page.setViewportSize({width: 1440, height: 1000});
+  }
 
   const compact = await readFixture('compact.json');
   const branched = await readFixture('branched-loop.json');
