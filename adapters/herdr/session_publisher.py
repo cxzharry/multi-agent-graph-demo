@@ -16,7 +16,9 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from adapters.herdr.observed_events import ObservationError, ObservationLedger
+from adapters.herdr.flow_projection import project_flow
 from adapters.herdr.publisher import (
+    FlowRuntime,
     PublisherError,
     _positive_interval,
     _space_name_argument,
@@ -100,6 +102,9 @@ def build_session_snapshot(
     ledger: ObservationLedger | None = None,
     observed_at: str | None = None,
     publisher_fingerprint: str = "unmanaged",
+    flow_events: list[dict] | None = None,
+    prior_nodes: list[dict] | None = None,
+    flow_telemetry: dict | None = None,
 ) -> dict:
     """Build one P1-rooted observed graph from exact workspace-local agents.
 
@@ -138,7 +143,7 @@ def build_session_snapshot(
                 "layer": 0 if index == 0 else 1,
             }
         )
-    return {
+    snapshot = {
         "schemaVersion": "role-graph/v1",
         "scopeId": f"herdr:{workspace_id}",
         "runId": p1_session_id,
@@ -154,7 +159,29 @@ def build_session_snapshot(
         "failurePolicies": [],
         "activeFailureRoute": None,
         "events": _observed_events(ledger, nodes, observed_at),
+        "relationshipMode": "unavailable",
     }
+    if flow_events is not None:
+        projection = project_flow(
+            events=flow_events,
+            live_agents=local_agents,
+            p1_session_id=p1_session_id,
+            prior_nodes=prior_nodes,
+        )
+        snapshot.update(
+            {
+                "nodes": projection["nodes"],
+                "edges": projection["edges"],
+                "failurePolicies": [],
+                "activeFailureRoute": projection["activeFailureRoute"],
+                "events": projection["timeline"],
+                "relationshipMode": "event-backed",
+                "telemetry": copy.deepcopy(
+                    flow_telemetry or projection["telemetry"]
+                ),
+            }
+        )
+    return snapshot
 
 
 def _observed_events(
@@ -190,6 +217,8 @@ def publish_if_changed(
     observed_at: str | None = None,
     publisher_fingerprint: str = "unmanaged",
     sequence_floor: int = 1,
+    flow_events: list[dict] | None = None,
+    flow_telemetry: dict | None = None,
 ) -> dict:
     """Publish only projected topology, status, or lifecycle-event changes."""
     next_sequence = 1 if last_snapshot is None else last_snapshot["sequence"] + 1
@@ -204,6 +233,9 @@ def publish_if_changed(
         ledger=ledger,
         observed_at=observed_at,
         publisher_fingerprint=publisher_fingerprint,
+        flow_events=flow_events,
+        prior_nodes=last_snapshot.get("nodes") if last_snapshot else None,
+        flow_telemetry=flow_telemetry,
     )
     if last_snapshot is not None and _projection(snapshot) == _projection(
         last_snapshot
@@ -223,6 +255,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--token")
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--runtime-fingerprint", default="unmanaged")
+    parser.add_argument("--flow-journal", type=Path)
     parser.add_argument("--sequence-floor", type=_positive_sequence, default=1)
     parser.add_argument("--interval", type=_positive_interval, default=2.0)
     return parser
@@ -246,6 +279,15 @@ def main() -> int:
     )
     sequence_floor = args.sequence_floor
     ledger = ObservationLedger()
+    flow_runtime = (
+        FlowRuntime(
+            args.flow_journal,
+            workspace_id=args.workspace_id,
+            run_id=args.p1_session_id,
+        )
+        if args.flow_journal is not None
+        else None
+    )
     if seed is not None:
         seed_sequence = seed.get("sequence")
         if (
@@ -256,7 +298,7 @@ def main() -> int:
             sequence_floor = max(sequence_floor, seed_sequence + 1)
         nodes = seed.get("nodes")
         events = seed.get("events")
-        if isinstance(nodes, list) and isinstance(events, list):
+        if flow_runtime is None and isinstance(nodes, list) and isinstance(events, list):
             try:
                 ledger = ObservationLedger.restore(nodes, events)
             except ObservationError:
@@ -264,6 +306,8 @@ def main() -> int:
     last_snapshot = None
     while True:
         try:
+            if flow_runtime is not None:
+                flow_runtime.poll()
             agents = select_workspace_agents(list_agents(), args.workspace_id)
             last_snapshot = publish_if_changed(
                 agents,
@@ -277,6 +321,8 @@ def main() -> int:
                 ledger=ledger,
                 publisher_fingerprint=args.runtime_fingerprint,
                 sequence_floor=sequence_floor,
+                flow_events=flow_runtime.events if flow_runtime else None,
+                flow_telemetry=flow_runtime.telemetry if flow_runtime else None,
             )
             heartbeat_presence(args.endpoint, args.token, last_snapshot)
         except (

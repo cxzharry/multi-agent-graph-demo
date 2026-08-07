@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import adapters.herdr.publisher as publisher_module
+from adapters.herdr.flow_journal import EVENT_SCHEMA_VERSION, FlowJournal
 from adapters.herdr.observed_events import ObservationLedger
 from adapters.herdr.session_publisher import (
     _parser,
@@ -22,6 +24,29 @@ from adapters.herdr.session_publisher import (
 P1_SESSION = "019fb24f-f36f-7642-8679-5c6405fb3889"
 SCRIPT_PATH = Path(__file__).with_name("session_publisher.py").resolve()
 REPOSITORY_ROOT = Path(__file__).parents[2]
+
+
+def flow_assignment(identifier, role, slot, session_id):
+    return {
+        "id": identifier,
+        "role": role,
+        "slot": slot,
+        "agentSessionId": session_id,
+        "task": role,
+    }
+
+
+def flow_event(kind, event_id, **fields):
+    return {
+        "schemaVersion": EVENT_SCHEMA_VERSION,
+        "eventId": event_id,
+        "workspaceId": "wK",
+        "runId": P1_SESSION,
+        "at": "2026-08-07T01:02:03Z",
+        "kind": kind,
+        "generation": 1,
+        **fields,
+    }
 
 
 def agent(
@@ -487,6 +512,175 @@ class SessionSnapshotTests(unittest.TestCase):
 
         self.assertEqual("publisher-sha", args.runtime_fingerprint)
         self.assertEqual(112, args.sequence_floor)
+
+
+class EventBackedSessionTests(unittest.TestCase):
+    def setUp(self):
+        self.p1 = flow_assignment(
+            "orchestrator", "Orchestrator", "P1", P1_SESSION
+        )
+        self.worker = flow_assignment(
+            "implementation-api:g1", "Implementation", "P2", "session-p2"
+        )
+        self.events = [
+            flow_event(
+                "CONTROL_DISPATCH",
+                "evt-dispatch",
+                source=self.p1,
+                target=self.worker,
+            ),
+            flow_event(
+                "ASSIGNMENT_RESULT",
+                "evt-result",
+                assignment=self.worker,
+                result="PASS",
+            ),
+        ]
+        self.agents = [
+            agent("wK", "wK:p1", P1_SESSION, "p1_orchestrator", "done"),
+            agent("wK", "wK:p2", "session-p2", "p2_impl", "done"),
+        ]
+
+    def test_without_flow_events_preserves_legacy_nodes_as_unavailable(self):
+        snapshot = build_session_snapshot(
+            self.agents,
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            1,
+        )
+
+        self.assertEqual("unavailable", snapshot["relationshipMode"])
+        self.assertEqual("orchestrator", snapshot["nodes"][0]["id"])
+        self.assertEqual([], snapshot["edges"])
+
+    def test_events_separate_liveness_result_and_keep_p1_running(self):
+        snapshot = build_session_snapshot(
+            self.agents,
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            1,
+            flow_events=self.events,
+        )
+        nodes = {node["id"]: node for node in snapshot["nodes"]}
+
+        self.assertEqual("event-backed", snapshot["relationshipMode"])
+        self.assertEqual("running", nodes["orchestrator"]["liveness"])
+        self.assertNotIn("result", nodes["orchestrator"])
+        self.assertEqual("idle", nodes[self.worker["id"]]["liveness"])
+        self.assertEqual("pass", nodes[self.worker["id"]]["result"])
+        self.assertEqual(
+            [("orchestrator", self.worker["id"], "control")],
+            [
+                (edge["source"], edge["target"], edge["kind"])
+                for edge in snapshot["edges"]
+            ],
+        )
+
+    def test_removed_completed_worker_remains_offline_with_result(self):
+        first = build_session_snapshot(
+            self.agents,
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            1,
+            flow_events=self.events,
+        )
+        removed = build_session_snapshot(
+            self.agents[:1],
+            "wK",
+            "herdr-orchestrator",
+            P1_SESSION,
+            "wK:p1",
+            2,
+            flow_events=self.events,
+            prior_nodes=first["nodes"],
+        )
+        node = next(
+            node for node in removed["nodes"] if node["id"] == self.worker["id"]
+        )
+
+        self.assertEqual("offline", node["liveness"])
+        self.assertEqual("pass", node["result"])
+
+    def test_unchanged_event_projection_is_not_republished(self):
+        with mock.patch(
+            "adapters.herdr.session_publisher.publish_snapshot"
+        ) as publish:
+            first = publish_if_changed(
+                self.agents,
+                "wK",
+                "herdr-orchestrator",
+                P1_SESSION,
+                "wK:p1",
+                "http://127.0.0.1:4173/api/snapshots",
+                None,
+                None,
+                flow_events=self.events,
+            )
+            unchanged = publish_if_changed(
+                self.agents,
+                "wK",
+                "herdr-orchestrator",
+                P1_SESSION,
+                "wK:p1",
+                "http://127.0.0.1:4173/api/snapshots",
+                None,
+                first,
+                flow_events=self.events,
+            )
+
+        self.assertIs(first, unchanged)
+        publish.assert_called_once()
+
+    def test_flow_runtime_retains_valid_events_and_reports_malformed_tail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal_path = Path(directory) / "flow-events.jsonl"
+            journal = FlowJournal(
+                journal_path, workspace_id="wK", run_id=P1_SESSION
+            )
+            journal.append(self.events[0])
+            runtime = publisher_module.FlowRuntime(
+                journal_path, workspace_id="wK", run_id=P1_SESSION
+            )
+
+            self.assertTrue(runtime.poll())
+            valid_events = copy.deepcopy(runtime.events)
+            with journal_path.open("ab") as handle:
+                handle.write(b'{"malformed"')
+            before = journal_path.read_bytes()
+
+            self.assertTrue(runtime.poll())
+
+            self.assertEqual(valid_events, runtime.events)
+            self.assertEqual("degraded", runtime.telemetry["status"])
+            self.assertEqual(self.events[0]["at"], runtime.telemetry["lastValidAt"])
+            self.assertIn("malformed", runtime.telemetry["reason"])
+            self.assertEqual(before, journal_path.read_bytes())
+
+    def test_cli_accepts_exact_flow_journal_path(self):
+        args = _parser().parse_args(
+            [
+                "--workspace-id",
+                "wK",
+                "--space-name",
+                "herdr-orchestrator",
+                "--p1-session-id",
+                P1_SESSION,
+                "--p1-pane-id",
+                "wK:p1",
+                "--endpoint",
+                "http://127.0.0.1:4173/api/snapshots",
+                "--flow-journal",
+                "/tmp/exact-flow.jsonl",
+            ]
+        )
+
+        self.assertEqual(Path("/tmp/exact-flow.jsonl"), args.flow_journal)
 
 
 if __name__ == "__main__":

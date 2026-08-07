@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 import adapters.herdr.publisher as publisher_module
+from adapters.herdr.flow_journal import EVENT_SCHEMA_VERSION
 from adapters.herdr.observed_events import ObservationLedger
 from adapters.herdr.publisher import (
     PublisherError,
@@ -24,6 +25,29 @@ from adapters.herdr.publisher import (
 
 
 SPACE_NAME = "herdr-orchestrator"
+
+
+def flow_assignment(identifier, role, slot, session_id):
+    return {
+        "id": identifier,
+        "role": role,
+        "slot": slot,
+        "agentSessionId": session_id,
+        "task": role,
+    }
+
+
+def flow_event(kind, event_id, run_id, **fields):
+    return {
+        "schemaVersion": EVENT_SCHEMA_VERSION,
+        "eventId": event_id,
+        "workspaceId": "wK",
+        "runId": run_id,
+        "at": "2026-08-07T01:02:03Z",
+        "kind": kind,
+        "generation": 1,
+        **fields,
+    }
 
 
 def fixture_state():
@@ -1070,6 +1094,56 @@ class PublishingTests(unittest.TestCase):
             self.assertEqual(42, unchanged)
             publish.assert_called_once()
 
+    def test_same_revision_publishes_when_flow_journal_changes(self):
+        state = fixture_state()
+        run_id = state["run"]["contract_id"]
+        p1 = flow_assignment(
+            "orchestrator", "Orchestrator", "P1", "session-p1"
+        )
+        worker = flow_assignment(
+            "implementation-api:g1", "Implementation", "P2", "session-p2"
+        )
+        events = [
+            flow_event(
+                "CONTROL_DISPATCH",
+                "evt-dispatch",
+                run_id,
+                source=p1,
+                target=worker,
+            )
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                revision = publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    None,
+                    synthesize=True,
+                    space_name=SPACE_NAME,
+                )
+                unchanged_revision = publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    revision,
+                    synthesize=True,
+                    space_name=SPACE_NAME,
+                    flow_events=events,
+                    flow_changed=True,
+                )
+
+        self.assertEqual(revision, unchanged_revision)
+        self.assertEqual(2, publish.call_count)
+
     def test_missing_revision_is_rejected_before_network_access(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1337,6 +1411,195 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(args.synthesize)
         self.assertIsNone(args.manifest)
         self.assertEqual("herdr-orchestrator", args.space_name)
+
+    def test_accepts_exact_flow_journal_path(self):
+        args = _parser().parse_args(
+            [
+                "--state",
+                "state.json",
+                "--synthesize",
+                "--workspace-id",
+                "wK",
+                "--space-name",
+                "herdr-orchestrator",
+                "--endpoint",
+                "http://127.0.0.1:4173/api/snapshots",
+                "--flow-journal",
+                "/tmp/exact-flow.jsonl",
+            ]
+        )
+
+        self.assertEqual(Path("/tmp/exact-flow.jsonl"), args.flow_journal)
+
+
+class EventBackedControlSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        self.state = fixture_state()
+        self.state["slots"] = {
+            "P1": {
+                "status": "ACTIVE",
+                "session_id": "session-p1",
+                "pane_id": "wK:p1",
+                "task_summary": "Route ready work",
+            },
+            "P2": {
+                "status": "BUSY",
+                "session_id": "session-p2",
+                "pane_id": "wK:p2",
+                "lane_id": "implementation_a",
+            },
+        }
+        self.state["controller"] = {"session_id": "session-p1"}
+        self.state["lanes"]["implementation_a"]["state"] = "ACCEPTED"
+        self.p1 = flow_assignment(
+            "orchestrator", "Orchestrator", "P1", "session-p1"
+        )
+        self.worker = flow_assignment(
+            "implementation-api:g1", "Implementation", "P2", "session-p2"
+        )
+        self.events = [
+            flow_event(
+                "CONTROL_DISPATCH",
+                "evt-dispatch",
+                self.state["run"]["contract_id"],
+                source=self.p1,
+                target=self.worker,
+            )
+        ]
+
+    def test_synthetic_topology_overlays_events_and_separates_slot_liveness(self):
+        snapshot = build_snapshot(
+            self.state,
+            synthesize_manifest(self.state),
+            "wK",
+            SPACE_NAME,
+            flow_events=self.events,
+            synthetic=True,
+        )
+        nodes = {node["id"]: node for node in snapshot["nodes"]}
+
+        self.assertEqual("event-backed", snapshot["relationshipMode"])
+        self.assertEqual("running", nodes["orchestrator"]["liveness"])
+        self.assertEqual("running", nodes[self.worker["id"]]["liveness"])
+        self.assertEqual("pass", nodes[self.worker["id"]]["result"])
+        self.assertEqual(
+            [("orchestrator", self.worker["id"], "control")],
+            [
+                (edge["source"], edge["target"], edge["kind"])
+                for edge in snapshot["edges"]
+            ],
+        )
+
+    def test_controller_identity_seeds_running_p1_when_slot_identity_is_missing(self):
+        self.state["slots"]["P1"].update(
+            {"status": "COLD", "session_id": None, "pane_id": None}
+        )
+        self.state["controller"].update(
+            {"pane_id": "wK:p1", "name": "p1_orchestrator"}
+        )
+
+        snapshot = build_snapshot(
+            self.state,
+            synthesize_manifest(self.state),
+            "wK",
+            SPACE_NAME,
+            flow_events=self.events,
+            synthetic=True,
+        )
+        p1 = next(node for node in snapshot["nodes"] if node["id"] == "orchestrator")
+
+        self.assertEqual("running", p1["liveness"])
+
+    def test_custom_manifest_preserves_authored_topology_byte_for_byte(self):
+        manifest = fixture_manifest()
+        authored_edges = json.dumps(manifest["edges"], separators=(",", ":"))
+        authored_policies = json.dumps(
+            manifest["failurePolicies"], separators=(",", ":")
+        )
+
+        snapshot = build_snapshot(
+            self.state,
+            manifest,
+            "wK",
+            SPACE_NAME,
+            flow_events=self.events,
+            synthetic=False,
+        )
+
+        self.assertEqual("declared", snapshot["relationshipMode"])
+        self.assertEqual(
+            authored_edges,
+            json.dumps(snapshot["edges"], separators=(",", ":")),
+        )
+        self.assertEqual(
+            authored_policies,
+            json.dumps(snapshot["failurePolicies"], separators=(",", ":")),
+        )
+
+    def test_journalless_modes_remain_declared_or_unavailable(self):
+        custom = build_snapshot(
+            self.state, fixture_manifest(), "wK", SPACE_NAME
+        )
+        synthetic = build_snapshot(
+            self.state, synthesize_manifest(self.state), "wK", SPACE_NAME
+        )
+
+        self.assertEqual("declared", custom["relationshipMode"])
+        self.assertEqual("unavailable", synthetic["relationshipMode"])
+
+    def test_degraded_telemetry_keeps_last_valid_event_projection(self):
+        healthy = build_snapshot(
+            self.state,
+            synthesize_manifest(self.state),
+            "wK",
+            SPACE_NAME,
+            flow_events=self.events,
+            synthetic=True,
+        )
+        degraded = build_snapshot(
+            self.state,
+            synthesize_manifest(self.state),
+            "wK",
+            SPACE_NAME,
+            flow_events=self.events,
+            flow_telemetry={
+                "status": "degraded",
+                "lastValidAt": self.events[-1]["at"],
+                "reason": "journal has a malformed tail",
+            },
+            synthetic=True,
+        )
+
+        for field in ("nodes", "edges", "activeFailureRoute", "events"):
+            self.assertEqual(healthy[field], degraded[field])
+        self.assertEqual("degraded", degraded["telemetry"]["status"])
+
+    def test_event_backed_publish_keeps_only_semantic_timeline_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "state.json"
+            state_path.write_text(json.dumps(self.state), encoding="utf-8")
+            with mock.patch(
+                "adapters.herdr.publisher.publish_snapshot"
+            ) as publish:
+                publish_if_changed(
+                    state_path,
+                    None,
+                    "wK",
+                    "http://127.0.0.1:4173/api/snapshots",
+                    None,
+                    None,
+                    space_name=SPACE_NAME,
+                    synthesize=True,
+                    ledger=ObservationLedger(),
+                    observed_at="2026-08-07T01:02:04Z",
+                    flow_events=self.events,
+                    flow_changed=True,
+                )
+
+        snapshot = publish.call_args.args[0]
+        self.assertEqual(
+            ["evt-dispatch"], [event["id"] for event in snapshot["events"]]
+        )
 
 
 if __name__ == "__main__":

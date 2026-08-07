@@ -17,6 +17,8 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from adapters.herdr.observed_events import ObservationLedger
+from adapters.herdr.flow_journal import FlowJournalReader, JournalError
+from adapters.herdr.flow_projection import project_flow
 
 
 EVENT_LIMIT = 50
@@ -32,6 +34,7 @@ LANE_STATUSES = {
     "SUPERSEDED": "skipped",
 }
 SLOT_STATUSES = {
+    "ACTIVE": "running",
     "COLD": "pending",
     "IDLE": "pending",
     "STARTING": "running",
@@ -50,6 +53,44 @@ SLOT_STATUSES = {
 
 class PublisherError(ValueError):
     """Raised when supplied state cannot produce a role-graph snapshot."""
+
+
+class FlowRuntime:
+    """Retain validated journal facts and fail open with explicit telemetry."""
+
+    def __init__(self, path: Path, *, workspace_id: str, run_id: str):
+        self.reader = FlowJournalReader(
+            path, workspace_id=workspace_id, run_id=run_id
+        )
+        self.events: list[dict] = []
+        self.telemetry = {"status": "ok"}
+
+    def poll(self) -> bool:
+        previous_telemetry = copy.deepcopy(self.telemetry)
+        try:
+            new_events = self.reader.read_new()
+        except (JournalError, OSError) as error:
+            self.telemetry = {
+                "status": "degraded",
+                **(
+                    {"lastValidAt": self.events[-1]["at"]}
+                    if self.events
+                    else {}
+                ),
+                "reason": str(error),
+            }
+            return self.telemetry != previous_telemetry
+
+        self.events.extend(new_events)
+        self.telemetry = {
+            "status": "ok",
+            **(
+                {"lastValidAt": self.events[-1]["at"]}
+                if self.events
+                else {}
+            ),
+        }
+        return bool(new_events) or self.telemetry != previous_telemetry
 
 
 def _lane_chains(
@@ -261,6 +302,9 @@ def build_snapshot(
     space_name: str,
     *,
     publisher_fingerprint: str = "unmanaged",
+    flow_events: list[dict] | None = None,
+    flow_telemetry: dict | None = None,
+    synthetic: bool | None = None,
 ) -> dict:
     """Return one role-graph/v1 snapshot without I/O."""
     if state.get("workspace_id") != workspace_id:
@@ -298,7 +342,7 @@ def build_snapshot(
     active_route = _active_failure_route(policies, resolved, materialized)
     generated_at = _generated_at(state)
 
-    return {
+    snapshot = {
         "schemaVersion": "role-graph/v1",
         "scopeId": f"herdr:{workspace_id}",
         "runId": run_id,
@@ -316,6 +360,152 @@ def build_snapshot(
         "activeFailureRoute": active_route,
         "events": _events(state, lane_nodes, generated_at),
     }
+    if synthetic is None:
+        synthetic = materialized.get("flowId") == "auto-operational"
+    snapshot["relationshipMode"] = "unavailable" if synthetic else "declared"
+    if flow_events is not None:
+        projection = project_flow(
+            events=flow_events,
+            live_agents=_control_live_agents(state),
+            p1_session_id=_control_p1_session_id(state),
+            prior_nodes=None,
+        )
+        telemetry = copy.deepcopy(flow_telemetry or projection["telemetry"])
+        if synthetic:
+            _apply_synthetic_flow(snapshot, projection)
+            snapshot["relationshipMode"] = "event-backed"
+        else:
+            _apply_declared_flow(snapshot, projection)
+        snapshot["events"] = projection["timeline"]
+        snapshot["telemetry"] = telemetry
+        latest = _timestamp(telemetry.get("lastValidAt"))
+        current = _timestamp(snapshot["generatedAt"])
+        if latest is not None and (current is None or latest > current):
+            snapshot["generatedAt"] = _format_timestamp(latest)
+    return snapshot
+
+
+def _control_p1_session_id(state: dict) -> str:
+    candidates = (
+        state.get("controller", {}).get("session_id"),
+        state.get("slots", {}).get("P1", {}).get("session_id"),
+    )
+    return next(
+        (value for value in candidates if isinstance(value, str) and value),
+        "unavailable-p1-session",
+    )
+
+
+def _control_live_agents(state: dict) -> list[dict]:
+    agents = []
+    for slot_id, slot in sorted(state.get("slots", {}).items()):
+        session_id = slot.get("session_id")
+        pane_id = slot.get("pane_id")
+        if not isinstance(session_id, str) or not session_id:
+            continue
+        if not isinstance(pane_id, str) or not pane_id:
+            continue
+        status = str(slot.get("status", "")).upper()
+        agent_status = (
+            "working"
+            if status in {"ACTIVE", "STARTING", "WARMING", "BUSY", "RUNNING"}
+            else "done"
+            if status == "DONE"
+            else "idle"
+            if status in {"COLD", "IDLE"}
+            else "blocked"
+            if status == "BLOCKED"
+            else "unknown"
+        )
+        agents.append(
+            {
+                "workspace_id": state.get("workspace_id"),
+                "pane_id": pane_id,
+                "name": slot.get("role_name") or slot_id,
+                "agent_status": agent_status,
+                "agent_session": {"value": session_id},
+            }
+        )
+    controller = state.get("controller", {})
+    controller_session = controller.get("session_id")
+    controller_pane = controller.get("pane_id")
+    represented_sessions = {
+        agent["agent_session"]["value"] for agent in agents
+    }
+    if (
+        isinstance(controller_session, str)
+        and controller_session
+        and isinstance(controller_pane, str)
+        and controller_pane
+        and controller_session not in represented_sessions
+    ):
+        agents.append(
+            {
+                "workspace_id": state.get("workspace_id"),
+                "pane_id": controller_pane,
+                "name": controller.get("name") or "P1",
+                "agent_status": "working",
+                "agent_session": {"value": controller_session},
+            }
+        )
+    return agents
+
+
+def _apply_synthetic_flow(snapshot: dict, projection: dict) -> None:
+    authored_by_assignee = {
+        node["assignee"]: node for node in snapshot["nodes"]
+    }
+    projected_assignees = set()
+    nodes = []
+    for original in projection["nodes"]:
+        node = copy.deepcopy(original)
+        projected_assignees.add(node["assignee"])
+        authored = authored_by_assignee.get(node["assignee"])
+        if authored is not None:
+            if "result" not in node:
+                result = _result_from_status(authored["status"])
+                if result is not None:
+                    node["result"] = result
+            if not node.get("task"):
+                node["task"] = authored["task"]
+        nodes.append(node)
+    nodes.extend(
+        copy.deepcopy(node)
+        for node in snapshot["nodes"]
+        if node["assignee"] not in projected_assignees
+    )
+    snapshot["nodes"] = nodes
+    snapshot["edges"] = copy.deepcopy(projection["edges"])
+    snapshot["failurePolicies"] = []
+    snapshot["activeFailureRoute"] = copy.deepcopy(
+        projection["activeFailureRoute"]
+    )
+
+
+def _apply_declared_flow(snapshot: dict, projection: dict) -> None:
+    projected_by_assignee = {
+        node["assignee"]: node for node in projection["nodes"]
+    }
+    for node in snapshot["nodes"]:
+        projected = projected_by_assignee.get(node["assignee"])
+        if projected is None:
+            continue
+        node["liveness"] = projected["liveness"]
+        result = projected.get("result") or _result_from_status(node["status"])
+        if result is not None:
+            node["result"] = result
+        if "lastActivityAt" in projected:
+            node["lastActivityAt"] = projected["lastActivityAt"]
+
+
+def _result_from_status(status: str) -> str | None:
+    return {
+        "passed": "pass",
+        "failed": "fail",
+        "blocked": "blocked",
+        "skipped": "skipped",
+        "retrying": "rework",
+    }.get(status)
 
 
 def publish_snapshot(
@@ -446,6 +636,9 @@ def publish_if_changed(
     ledger: ObservationLedger | None = None,
     observed_at: str | None = None,
     publisher_fingerprint: str = "unmanaged",
+    flow_events: list[dict] | None = None,
+    flow_telemetry: dict | None = None,
+    flow_changed: bool = False,
 ) -> int:
     """Publish the supplied state only when its revision changes."""
     if synthesize == (manifest_path is not None):
@@ -457,7 +650,7 @@ def publish_if_changed(
             "workspace_id does not match the supplied workspace state"
         )
     revision = _revision(state)
-    if revision == last_revision:
+    if revision == last_revision and not flow_changed:
         return revision
 
     manifest = synthesize_manifest(state) if synthesize else _read_json(manifest_path)
@@ -467,8 +660,12 @@ def publish_if_changed(
         workspace_id,
         space_name=space_name,
         publisher_fingerprint=publisher_fingerprint,
+        flow_events=flow_events,
+        flow_telemetry=flow_telemetry,
+        synthetic=synthesize,
     )
-    _merge_observed_events(snapshot, ledger, observed_at)
+    if flow_events is None:
+        _merge_observed_events(snapshot, ledger, observed_at)
     publish_snapshot(snapshot, endpoint, token, replace_current=replace_current)
     return snapshot["sequence"]
 
@@ -684,6 +881,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--watch", action="store_true")
     parser.add_argument("--replace-current", action="store_true")
     parser.add_argument("--runtime-fingerprint", default="unmanaged")
+    parser.add_argument("--flow-journal", type=Path)
     parser.add_argument("--interval", type=_positive_interval, default=2.0)
     return parser
 
@@ -693,8 +891,20 @@ def main() -> int:
     last_revision = None
     replace_current = args.replace_current
     ledger = ObservationLedger()
+    flow_runtime = None
+    if args.flow_journal is not None:
+        state = _read_json(args.state)
+        run_id = state.get("run", {}).get("contract_id")
+        if not isinstance(run_id, str) or not run_id:
+            raise PublisherError("run.contract_id is required")
+        flow_runtime = FlowRuntime(
+            args.flow_journal,
+            workspace_id=args.workspace_id,
+            run_id=run_id,
+        )
     while True:
         try:
+            flow_changed = flow_runtime.poll() if flow_runtime else False
             revision = publish_if_changed(
                 args.state,
                 args.manifest,
@@ -707,6 +917,9 @@ def main() -> int:
                 replace_current=replace_current,
                 ledger=ledger,
                 publisher_fingerprint=args.runtime_fingerprint,
+                flow_events=flow_runtime.events if flow_runtime else None,
+                flow_telemetry=flow_runtime.telemetry if flow_runtime else None,
+                flow_changed=flow_changed,
             )
             replace_current = False
             if revision != last_revision:

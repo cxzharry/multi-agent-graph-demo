@@ -187,5 +187,5 @@ def _validate_assignment(value: object, field: str) -> None:
 
 
 def _validate_result(value: object) -> None:
-    if value not in RESULTS:
+    if not isinstance(value, str) or value not in RESULTS:
         raise JournalError("result is unknown")

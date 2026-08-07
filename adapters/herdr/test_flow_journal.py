@@ -160,13 +160,14 @@ class EventValidationTests(unittest.TestCase):
 
     def test_rejects_unknown_result(self):
         for event_kind in ("ASSIGNMENT_RESULT", "RUN_TERMINAL"):
-            with self.subTest(kind=event_kind):
-                with self.assertRaisesRegex(JournalError, "result"):
-                    validate_event(
-                        event(event_kind, result="MAYBE"),
-                        workspace_id=WORKSPACE_ID,
-                        run_id=RUN_ID,
-                    )
+            for result in ("MAYBE", {"unexpected": True}):
+                with self.subTest(kind=event_kind, result=result):
+                    with self.assertRaisesRegex(JournalError, "result"):
+                        validate_event(
+                            event(event_kind, result=result),
+                            workspace_id=WORKSPACE_ID,
+                            run_id=RUN_ID,
+                        )
 
 
 class JournalAppendReadTests(unittest.TestCase):
