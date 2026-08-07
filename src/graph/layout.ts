@@ -1,6 +1,6 @@
 import {Graph, layout} from '@dagrejs/dagre';
 
-import type {RoleEdge, RoleNode} from './types';
+import type {RelationshipMode, RoleEdge, RoleNode} from './types';
 
 export const ROLE_NODE_WIDTH = 280;
 export const ROLE_NODE_HEIGHT = 148;
@@ -21,6 +21,7 @@ export type RoleGraphLayout = {
 export function layoutRoleGraph(
   nodes: RoleNode[],
   edges: RoleEdge[],
+  relationshipMode?: RelationshipMode,
 ): RoleGraphLayout {
   const sortedNodes = [...nodes].sort((left, right) =>
     left.id.localeCompare(right.id),
@@ -55,9 +56,25 @@ export function layoutRoleGraph(
   layout(graph);
 
   const derivedLayers = deriveLayers(sortedNodes, forwardEdges);
+  const p1Ids = new Set(
+    sortedNodes.filter(isP1Node).map(node => node.id),
+  );
+  const p1ParticipatesInArtifactFlow = forwardEdges.some(
+    edge => p1Ids.has(edge.source) || p1Ids.has(edge.target),
+  );
+  const reserveP1Rank =
+    relationshipMode === 'event-backed' &&
+    p1Ids.size > 0 &&
+    !p1ParticipatesInArtifactFlow;
   const nodesByLayer = new Map<number, RoleNode[]>();
   for (const node of sortedNodes) {
-    const layer = node.layer ?? derivedLayers.get(node.id) ?? 0;
+    const artifactLayer = derivedLayers.get(node.id) ?? 0;
+    const layer =
+      relationshipMode === 'event-backed'
+        ? p1Ids.has(node.id)
+          ? 0
+          : artifactLayer + (reserveP1Rank ? 1 : 0)
+        : (node.layer ?? artifactLayer);
     const group = nodesByLayer.get(layer) ?? [];
     group.push(node);
     nodesByLayer.set(layer, group);
@@ -110,6 +127,10 @@ export function layoutRoleGraph(
     forwardEdges,
     feedbackGutterX: graphRight + FEEDBACK_GUTTER_MARGIN,
   };
+}
+
+function isP1Node(node: RoleNode): boolean {
+  return /^P1$/i.test(node.assignee) || /^p1(?:[_-]|$)/i.test(node.role);
 }
 
 function deriveLayers(nodes: RoleNode[], edges: RoleEdge[]) {

@@ -72,6 +72,12 @@ export type ActiveFailureRoute = FailurePolicy & {
 
 export type GraphEvent = Record<string, unknown>;
 
+export type GraphTelemetry = {
+  status: 'degraded';
+  lastValidAt: string;
+  reason: string;
+};
+
 export type RoleGraphSnapshot = {
   schemaVersion: 'role-graph/v1';
   flowId?: string;
@@ -83,6 +89,7 @@ export type RoleGraphSnapshot = {
   generatedAt: string;
   title: string;
   relationshipMode?: RelationshipMode;
+  telemetry?: GraphTelemetry;
   nodes: RoleNode[];
   edges: RoleEdge[];
   failurePolicies: FailurePolicy[];

@@ -4,6 +4,7 @@ import {getFeedbackPath} from './layout';
 
 export type FeedbackEdgeData = {
   feedbackGutterX: number;
+  label?: string;
   reason: string;
 } & Record<string, unknown>;
 
@@ -34,6 +35,7 @@ export function FeedbackEdge({
       className="feedback-edge-path"
       data-testid="feedback-edge"
       aria-label={data?.reason || 'Active failure return'}
+      label={data?.label}
     />
   );
 }

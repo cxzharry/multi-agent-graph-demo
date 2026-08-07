@@ -83,13 +83,21 @@ function App() {
     selectGraph,
   } = useLiveGraph();
   const layout = useMemo(
-    () => layoutRoleGraph(snapshot?.nodes ?? [], snapshot?.edges ?? []),
+    () =>
+      layoutRoleGraph(
+        snapshot?.nodes ?? [],
+        snapshot?.edges ?? [],
+        snapshot?.relationshipMode,
+      ),
     [snapshot],
   );
   const responsiveGraphMode = useResponsiveGraphMode();
   const observedTopology =
     snapshot?.flowId === 'auto-operational' ||
     snapshot?.flowId === 'live-session';
+  const relationshipMode =
+    snapshot?.relationshipMode ??
+    (observedTopology ? 'unavailable' : 'declared');
   const positionedNodes = useMemo(() => {
     if (
       responsiveGraphMode === 'desktop' &&
@@ -191,15 +199,56 @@ function App() {
       source: edge.source,
       target: edge.target,
       type: 'straight',
-      animated: edge.status === 'active' || edge.status === 'retrying',
+      animated: edge.status === 'active',
       className: `forward-edge edge-${edge.status}`,
+      label: relationshipLabel(edge),
       markerEnd: {
         type: MarkerType.ArrowClosed,
         color: '#748298',
       },
     }));
+    const controlEdges: Edge[] = (snapshot?.edges ?? [])
+      .filter(edge => edge.kind === 'control')
+      .map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: 'straight',
+        animated: edge.status === 'active',
+        className: `control-edge edge-${edge.status}`,
+        label: relationshipLabel(edge),
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: '#748298',
+        },
+      }));
+    const returnEdges: FeedbackFlowEdge[] = (snapshot?.edges ?? [])
+      .filter(edge => edge.kind === 'return')
+      .map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: 'feedback',
+        animated: edge.status === 'active',
+        className: `return-edge edge-${edge.status}`,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: '#ef6a4c',
+        },
+        data: {
+          feedbackGutterX: feedbackGutterX(
+            responsiveGraphMode,
+            layout.feedbackGutterX,
+          ),
+          label: relationshipLabel(edge),
+          reason: edge.reason ?? 'Workflow return',
+        },
+      }));
+    if (returnEdges.length > 0) {
+      return [...forwardEdges, ...controlEdges, ...returnEdges];
+    }
     const route = snapshot?.activeFailureRoute;
-    if (!route) return forwardEdges;
+    if (!route) return [...forwardEdges, ...controlEdges];
 
     const feedbackEdge: FeedbackFlowEdge = {
       id: `active-failure-${route.gateNodeId}-${route.generation}`,
@@ -212,16 +261,14 @@ function App() {
         color: '#ef6a4c',
       },
       data: {
-        feedbackGutterX:
-          responsiveGraphMode === 'mobile'
-            ? 316
-            : responsiveGraphMode === 'tablet'
-              ? 960
-              : layout.feedbackGutterX,
+        feedbackGutterX: feedbackGutterX(
+          responsiveGraphMode,
+          layout.feedbackGutterX,
+        ),
         reason: route.reason,
       },
     };
-    return [...forwardEdges, feedbackEdge];
+    return [...forwardEdges, ...controlEdges, feedbackEdge];
   }, [
     layout.feedbackGutterX,
     layout.forwardEdges,
@@ -234,7 +281,7 @@ function App() {
     selection &&
       !graphs.some(graph => graphMatchesSelection(graph, selection)),
   );
-  const timeline = snapshot ? [...snapshot.events].slice(-12).reverse() : [];
+  const timeline = snapshot ? [...snapshot.events].slice(-12) : [];
   const activeGraphs = graphs.filter(graph => graph.isLive);
   const historicalGraphs = graphs.filter(graph => !graph.isLive);
   const timelineNodeLabels = new Map(
@@ -311,6 +358,15 @@ function App() {
       </header>
 
       {error && <div className="error-banner">{error}</div>}
+      {snapshot?.telemetry?.status === 'degraded' && (
+        <div className="telemetry-banner" data-testid="telemetry-degraded">
+          <strong>TELEMETRY DEGRADED</strong>
+          <span>
+            Last valid {formatTimestamp(snapshot.telemetry.lastValidAt)} ·{' '}
+            {snapshot.telemetry.reason}
+          </span>
+        </div>
+      )}
 
       <section className="viewer-layout">
         <div
@@ -327,7 +383,22 @@ function App() {
                   </span>
                   <span>Sequence {snapshot.sequence}</span>
                 </div>
-                {observedTopology && (
+                {observedTopology &&
+                  relationshipMode === 'event-backed' &&
+                  snapshot.edges.length === 0 && (
+                    <div
+                      className="relationship-notice"
+                      data-testid="relationship-notice"
+                      role="note"
+                    >
+                      <strong>Event-backed topology — no relationship events yet</strong>
+                      <span>
+                        Agent facts are live. Workflow links appear after the first
+                        recorded dispatch or artifact handoff.
+                      </span>
+                    </div>
+                  )}
+                {observedTopology && relationshipMode === 'unavailable' && (
                   <div
                     className="relationship-notice"
                     data-testid="relationship-notice"
@@ -469,6 +540,26 @@ function eventValue(event: GraphEvent, key: string) {
   return typeof value === 'string' || typeof value === 'number'
     ? String(value)
     : '';
+}
+
+function feedbackGutterX(
+  mode: ResponsiveGraphMode,
+  desktopGutterX: number,
+): number {
+  return mode === 'mobile' ? 316 : mode === 'tablet' ? 960 : desktopGutterX;
+}
+
+function relationshipLabel(edge: {
+  occurrenceCount?: number;
+  lastEventAt?: string;
+  reason?: string;
+}): string | undefined {
+  const parts = [
+    edge.reason,
+    edge.occurrenceCount && `×${edge.occurrenceCount}`,
+    edge.lastEventAt && formatTimestamp(edge.lastEventAt),
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
 function formatTimestamp(value: string | number) {

@@ -584,6 +584,30 @@ try {
         generation: 2,
       },
       {
+        id: 'implementation-launcher:g1',
+        role: 'p3_impl',
+        assignee: 'p3_impl_wk',
+        layer: 1,
+        status: 'passed',
+        liveness: 'offline',
+        result: 'pass',
+        lastActivityAt: recentIsoTime,
+        task: 'Implement launcher',
+        generation: 1,
+      },
+      {
+        id: 'integration:g1',
+        role: 'p5_integration',
+        assignee: 'p5_integration_wk',
+        layer: 2,
+        status: 'passed',
+        liveness: 'offline',
+        result: 'pass',
+        lastActivityAt: recentIsoTime,
+        task: 'Integrate artifacts',
+        generation: 1,
+      },
+      {
         id: 'independent-qc:g1',
         role: 'p6_review',
         assignee: 'p6_review_wk',
@@ -596,8 +620,88 @@ try {
         generation: 1,
       },
     ],
+    edges: [
+      {
+        id: 'control-p1-p4',
+        source: 'orchestrator',
+        target: 'implementation-visual:g2',
+        kind: 'control',
+        status: 'active',
+        occurrenceCount: 1,
+        lastEventAt: new Date(recentEpochMilliseconds - 3000).toISOString(),
+        reason: 'Current remediation owner',
+      },
+      ...[
+        ['implementation-ui:g1', 'passed'],
+        ['implementation-launcher:g1', 'passed'],
+        ['implementation-visual:g2', 'active'],
+      ].map(([source, status], index) => ({
+        id: `${source}-to-integration`,
+        source,
+        target: 'integration:g1',
+        kind: 'forward',
+        status,
+        occurrenceCount: index + 1,
+        lastEventAt: new Date(
+          recentEpochMilliseconds - (2000 - index * 500),
+        ).toISOString(),
+        reason: 'Artifact handoff',
+      })),
+      {
+        id: 'integration-to-qc',
+        source: 'integration:g1',
+        target: 'independent-qc:g1',
+        kind: 'forward',
+        status: 'passed',
+        occurrenceCount: 1,
+        lastEventAt: new Date(recentEpochMilliseconds - 500).toISOString(),
+        reason: 'Candidate handoff',
+      },
+      {
+        id: 'qc-return-to-p4',
+        source: 'independent-qc:g1',
+        target: 'implementation-visual:g2',
+        kind: 'return',
+        status: 'active',
+        occurrenceCount: 1,
+        lastEventAt: recentIsoTime,
+        reason: 'Responsive containment finding',
+      },
+    ],
+    events: [
+      {
+        id: 'dispatch-p4',
+        at: new Date(recentEpochMilliseconds - 2000).toISOString(),
+        nodeId: 'implementation-visual:g2',
+        message: 'Dispatch P4',
+      },
+      {
+        id: 'handoff-p5',
+        at: new Date(recentEpochMilliseconds - 1000).toISOString(),
+        nodeId: 'integration:g1',
+        message: 'P4 handoff P5',
+      },
+      {
+        id: 'finding-p4',
+        at: recentIsoTime,
+        nodeId: 'implementation-visual:g2',
+        message: 'P6 finding P4',
+      },
+    ],
+    telemetry: {
+      status: 'degraded',
+      lastValidAt: recentIsoTime,
+      reason: 'Malformed journal tail',
+    },
+  };
+  const eventBackedEmpty = {
+    ...structuredClone(eventBackedLiveness),
+    shortName: 'event-empty',
+    runId: 'event-backed-empty',
+    title: 'Event-backed empty relationships',
     edges: [],
     events: [],
+    telemetry: undefined,
   };
   const historyHardening = {
     ...structuredClone(branched),
@@ -634,6 +738,7 @@ try {
   for (const collision of scopeCollisions) await postSnapshot(baseUrl, collision);
   await postSnapshot(baseUrl, liveDensity);
   await postSnapshot(baseUrl, eventBackedLiveness);
+  await postSnapshot(baseUrl, eventBackedEmpty);
   await postSnapshot(baseUrl, expiringPresence);
   const atTimelineSnapshot = structuredClone(branched);
   atTimelineSnapshot.events = [
@@ -877,11 +982,26 @@ try {
       }).toString()}`,
     );
     await waitForNodeCount(page, eventBackedLiveness.nodes.length);
+    const responsiveMetrics = await responsiveVisualMetrics(page);
+    assert.ok(
+      responsiveMetrics.documentWidth <= responsiveMetrics.viewportWidth &&
+        responsiveMetrics.bodyWidth <= responsiveMetrics.viewportWidth,
+      `${viewport.width}x${viewport.height} event-backed graph must not overflow the page`,
+    );
+    assert.ok(
+      responsiveMetrics.graphPanel.left >= 0 &&
+        responsiveMetrics.graphPanel.right <= responsiveMetrics.viewportWidth + 1 &&
+        responsiveMetrics.canvas.left >= responsiveMetrics.graphPanel.left - 1 &&
+        responsiveMetrics.canvas.right <= responsiveMetrics.graphPanel.right + 1,
+      `${viewport.width}x${viewport.height} event-backed canvas must stay contained`,
+    );
 
     const expectedNodes = [
       ['orchestrator', 'running', null, 'P1'],
       ['implementation-ui:g1', 'offline', 'pass', 'P2'],
+      ['implementation-launcher:g1', 'offline', 'pass', 'P3'],
       ['implementation-visual:g2', 'running', 'rework', 'P4'],
+      ['integration:g1', 'offline', 'pass', 'P5'],
       ['independent-qc:g1', 'offline', 'fail', 'P6'],
     ];
     for (const [nodeId, liveness, result, assignee] of expectedNodes) {
@@ -934,7 +1054,95 @@ try {
       badgeContainment.every(metric => metric.inside),
       `${viewport.width}x${viewport.height} liveness/result badges must remain inside cards: ${JSON.stringify(badgeContainment)}`,
     );
+
+    if (viewport.width === 1440) {
+      const positions = Object.fromEntries(
+        await Promise.all(
+          eventBackedLiveness.nodes.map(async node => [
+            node.id,
+            await nodeBox(page, node.id),
+          ]),
+        ),
+      );
+      assert.ok(
+        ['implementation-ui:g1', 'implementation-launcher:g1', 'implementation-visual:g2'].every(
+          nodeId => positions.orchestrator.y < positions[nodeId].y,
+        ),
+        'P1 must remain above all same-rank implementation workers',
+      );
+      const workerTops = [
+        positions['implementation-ui:g1'].y,
+        positions['implementation-launcher:g1'].y,
+        positions['implementation-visual:g2'].y,
+      ];
+      assert.ok(workerTops.every(top => Math.abs(top - workerTops[0]) < 1));
+      assert.ok(workerTops[0] < positions['integration:g1'].y);
+      assert.ok(positions['integration:g1'].y < positions['independent-qc:g1'].y);
+
+      assert.equal(await page.locator('.control-edge.edge-active').count(), 1);
+      assert.equal(await page.locator('.control-edge.animated').count(), 1);
+      const controlDash = await page
+        .locator('.control-edge .react-flow__edge-path')
+        .evaluate(path => getComputedStyle(path).strokeDasharray);
+      assert.notEqual(controlDash, 'none');
+      assert.equal(await page.locator('.forward-edge').count(), 4);
+      assert.equal(await page.locator('.forward-edge.edge-passed.animated').count(), 0);
+      const artifactPaths = await page
+        .locator('.forward-edge .react-flow__edge-path')
+        .evaluateAll(paths => paths.map(path => path.getAttribute('d') || ''));
+      assert.ok(
+        artifactPaths.every(
+          path => !/[CQ]/.test(path) && (path.match(/L/g) || []).length === 1,
+        ),
+      );
+      assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 1);
+      const feedbackBox = await page
+        .locator('[data-testid="feedback-edge"]')
+        .boundingBox();
+      assert.ok(feedbackBox);
+      const rightmostNode = Math.max(
+        ...Object.values(positions).map(box => box.x + box.width),
+      );
+      assert.ok(feedbackBox.x + feedbackBox.width > rightmostNode);
+      assert.equal(await page.locator('.p1-star').count(), 0);
+
+      const timelineMessages = await page
+        .locator('.timeline-item p')
+        .allTextContents();
+      assert.deepEqual(timelineMessages, [
+        'Dispatch P4',
+        'P4 handoff P5',
+        'P6 finding P4',
+      ]);
+      assert.deepEqual(
+        await page.locator('.timeline-item small').allTextContents(),
+        eventBackedLiveness.events.map(
+          event =>
+            `${event.nodeId === 'integration:g1' ? 'P5 Integration' : 'P4 Implementation'} · ${formatSmokeTimestamp(event.at)}`,
+        ),
+      );
+      const degraded = page.getByTestId('telemetry-degraded');
+      await degraded.waitFor();
+      assert.match(await degraded.innerText(), /TELEMETRY DEGRADED/i);
+      assert.match(await degraded.innerText(), new RegExp(recentClockLabel));
+      assert.equal(
+        await page.locator('[data-testid="role-node"]').count(),
+        eventBackedLiveness.nodes.length,
+      );
+    }
   }
+
+  await page.goto(
+    `${baseUrl}/?${new URLSearchParams({
+      scopeId: eventBackedEmpty.scopeId,
+      runId: eventBackedEmpty.runId,
+    }).toString()}`,
+  );
+  await waitForNodeCount(page, eventBackedEmpty.nodes.length);
+  assert.match(
+    await page.getByTestId('relationship-notice').innerText(),
+    /no relationship events yet/i,
+  );
 
   await page.setViewportSize({width: 390, height: 844});
   await page.goto(
@@ -1333,16 +1541,16 @@ try {
   );
   assert.equal(await page.locator('[data-testid="feedback-edge"]').count(), 1);
   const firstTimelineItem = page.locator('.timeline-item').first();
-  await expectTimelineText(firstTimelineItem, 'Newest at event');
+  await expectTimelineText(firstTimelineItem, 'Older at event');
   await expectTimelineText(firstTimelineItem, newAtEventLabel);
-  await expectTimelineText(page.locator('.timeline-item').nth(1), 'Older at event');
+  await expectTimelineText(page.locator('.timeline-item').nth(1), 'Newest at event');
   await expectTimelineText(page.locator('.timeline-item').nth(1), newAtEventLabel);
   const timelineMessages = await page
     .locator('.timeline-item p')
     .evaluateAll(items => items.map(item => item.textContent?.trim()));
   assert.deepEqual(timelineMessages.slice(0, 2), [
-    'Newest at event',
     'Older at event',
+    'Newest at event',
   ]);
   const statusStyles = await statusVisualState(page);
   assert.notEqual(

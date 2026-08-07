@@ -196,6 +196,92 @@ describe('layoutRoleGraph', () => {
     expect(positions.get('agent-a')!.y).toBe(positions.get('agent-b')!.y);
     expect(positions.get('agent-b')!.y).toBe(positions.get('agent-c')!.y);
   });
+
+  test('derives option-A ranks only from artifact edges', () => {
+    const optionNodes: RoleNode[] = [
+      ['orchestrator', 'p1_orchestrator', 'P1', 9],
+      ['implementation-a', 'p2_impl', 'P2', 7],
+      ['implementation-b', 'p3_impl', 'P3', 6],
+      ['implementation-c', 'p4_impl', 'P4', 5],
+      ['integration', 'p5_integration', 'P5', 0],
+      ['review', 'p6_review', 'P6', 1],
+    ].map(([id, role, assignee, layer]) => ({
+      id: id as string,
+      role: role as string,
+      assignee: assignee as string,
+      layer: layer as number,
+      status: 'pending' as const,
+      task: 'Option A',
+      generation: 1,
+    }));
+    const artifactEdges: RoleEdge[] = [
+      ...['a', 'b', 'c'].map(suffix => ({
+        id: `implementation-${suffix}-to-integration`,
+        source: `implementation-${suffix}`,
+        target: 'integration',
+        kind: 'forward' as const,
+        status: 'passed' as const,
+      })),
+      {
+        id: 'integration-to-review',
+        source: 'integration',
+        target: 'review',
+        kind: 'forward',
+        status: 'active',
+      },
+    ];
+    const relationshipEdges: RoleEdge[] = [
+      ...artifactEdges,
+      {
+        id: 'active-control',
+        source: 'orchestrator',
+        target: 'implementation-c',
+        kind: 'control',
+        status: 'active',
+      },
+      {
+        id: 'active-return',
+        source: 'review',
+        target: 'implementation-c',
+        kind: 'return',
+        status: 'active',
+      },
+    ];
+
+    const result = layoutRoleGraph(
+      optionNodes,
+      relationshipEdges,
+      'event-backed',
+    );
+    const positions = new Map(
+      result.positionedNodes.map(node => [node.id, node.position]),
+    );
+    const artifactOnly = new Map(
+      layoutRoleGraph(optionNodes, artifactEdges, 'event-backed').positionedNodes.map(
+        node => [node.id, node.position],
+      ),
+    );
+
+    expect(positions.get('orchestrator')!.y).toBeLessThan(
+      positions.get('implementation-a')!.y,
+    );
+    expect(positions.get('implementation-a')!.y).toBe(
+      positions.get('implementation-b')!.y,
+    );
+    expect(positions.get('implementation-b')!.y).toBe(
+      positions.get('implementation-c')!.y,
+    );
+    expect(positions.get('implementation-c')!.y).toBeLessThan(
+      positions.get('integration')!.y,
+    );
+    expect(positions.get('integration')!.y).toBeLessThan(
+      positions.get('review')!.y,
+    );
+    expect(positions).toEqual(artifactOnly);
+    expect(result.forwardEdges.map(edge => edge.id)).toEqual(
+      artifactEdges.map(edge => edge.id).sort(),
+    );
+  });
 });
 
 describe('getFeedbackPath', () => {

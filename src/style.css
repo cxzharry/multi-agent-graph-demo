@@ -155,6 +155,23 @@ select {
   font-size: 13px;
 }
 
+.telemetry-banner {
+  display: flex;
+  max-width: 1680px;
+  margin: 0 auto 14px;
+  padding: 10px 13px;
+  border: 1px solid rgb(216 160 90 / 38%);
+  border-radius: 8px;
+  color: #d9b77f;
+  background: rgb(216 160 90 / 8%);
+  gap: 8px;
+  font-size: 12px;
+}
+
+.telemetry-banner span {
+  color: #a99575;
+}
+
 .viewer-layout {
   display: grid;
   width: 100%;
@@ -725,9 +742,20 @@ select {
 }
 
 .react-flow__edge.forward-edge.edge-active .react-flow__edge-path,
-.react-flow__edge.forward-edge.edge-retrying .react-flow__edge-path {
+.react-flow__edge.control-edge.edge-active .react-flow__edge-path {
   stroke: #6cad91;
   stroke-width: 2;
+}
+
+.react-flow__edge.control-edge .react-flow__edge-path {
+  stroke-dasharray: 7 5;
+}
+
+.react-flow__edge.edge-inactive,
+.react-flow__edge.edge-passed,
+.react-flow__edge.edge-stale,
+.react-flow__edge.edge-skipped {
+  opacity: 0.48;
 }
 
 .react-flow__edge.forward-edge.edge-failed .react-flow__edge-path {
