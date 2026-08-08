@@ -141,14 +141,14 @@ The browser smoke writes its screenshot to `artifacts/browser-smoke.png`.
 
 ## Key paths
 
-- `shared/role-graph.js` — runtime snapshot validation
-- `server/graph-store.js` — append-only persistence and latest-snapshot index
-- `server/app.js` — local HTTP API and filtered SSE
-- `src/graph/` — generic layout, nodes, feedback edge, and live-data hook
-- `fixtures/` — structurally different protocol examples
-- `adapters/herdr/` — optional repository-local read-only publisher
-- `docs/superpowers/` — approved design and implementation plan
-- `plans/meta-harness-2026-07-31-live-role-graph-plan/` — approved planning evidence
+- `shared/role-graph.js` - runtime snapshot validation
+- `server/graph-store.js` - append-only persistence and latest-snapshot index
+- `server/app.js` - local HTTP API and filtered SSE
+- `src/graph/` - generic layout, nodes, feedback edge, and live-data hook
+- `fixtures/` - structurally different protocol examples
+- `adapters/herdr/` - optional repository-local read-only publisher
+- `docs/superpowers/` - approved design and implementation plan
+- `plans/meta-harness-2026-07-31-live-role-graph-plan/` - approved planning evidence
 
 Generated files such as `node_modules/`, `dist/`, local JSONL data, browser
 evidence, and large media artifacts should remain untracked.
