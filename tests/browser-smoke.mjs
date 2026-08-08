@@ -103,23 +103,29 @@ async function publishRealFlowSnapshot({baseUrl, temporaryDirectory}) {
     delete publisherState.lanes[laneId];
     removedLaneIds.add(laneId);
   }
+  const retainedLanes = Object.values(publisherState.lanes).sort(
+    (left, right) =>
+      left.generation - right.generation ||
+      left.lane_id.localeCompare(right.lane_id),
+  );
   const latestRetainedLaneBySession = new Map();
-  for (const lane of Object.values(publisherState.lanes)) {
-    if (!lane.session_id) continue;
-    const latest = latestRetainedLaneBySession.get(lane.session_id);
-    if (
-      !latest ||
-      lane.generation > latest.generation ||
-      (lane.generation === latest.generation && lane.lane_id > latest.lane_id)
-    ) {
+  const latestRetainedLaneByWorker = new Map();
+  for (const lane of retainedLanes) {
+    if (lane.session_id) {
       latestRetainedLaneBySession.set(lane.session_id, lane);
+    }
+    if (lane.agent_name) {
+      latestRetainedLaneByWorker.set(lane.agent_name, lane);
     }
   }
   for (const slot of Object.values(publisherState.slots)) {
     if (!removedLaneIds.has(slot.lane_id)) continue;
-    const retained = latestRetainedLaneBySession.get(slot.session_id);
-    assert.ok(retained, `Missing retained fixture lane for ${slot.session_id}`);
+    const retained =
+      latestRetainedLaneBySession.get(slot.session_id) ??
+      latestRetainedLaneByWorker.get(slot.role_name);
+    assert.ok(retained, `Missing retained fixture lane for ${slot.role_name}`);
     slot.lane_id = retained.lane_id;
+    slot.session_id = retained.session_id;
     slot.status = retained.state === 'ACTIVE' ? 'BUSY' : 'DONE';
   }
   assert.deepEqual(
@@ -130,12 +136,17 @@ async function publishRealFlowSnapshot({baseUrl, temporaryDirectory}) {
     `Real publisher fixture must exclude lanes after generation ${frozenGeneration}`,
   );
   for (const [position, slot] of Object.entries(publisherState.slots)) {
-    if (!slot.session_id) continue;
-    const retained = latestRetainedLaneBySession.get(slot.session_id);
+    if (!removedLaneIds.has(state.slots[position]?.lane_id)) continue;
+    const retained = latestRetainedLaneByWorker.get(slot.role_name);
     assert.equal(
       slot.lane_id,
       retained?.lane_id,
-      `${position} must point to its latest retained fixture lane`,
+      `${position} must point to its latest retained stable-worker lane`,
+    );
+    assert.equal(
+      slot.session_id,
+      retained?.session_id,
+      `${position} must use its retained stable-worker session`,
     );
   }
   const publisherStatePath = path.join(
@@ -150,8 +161,8 @@ async function publishRealFlowSnapshot({baseUrl, temporaryDirectory}) {
   const session = position => {
     const value =
       position === 'P1'
-        ? state.controller?.session_id
-        : state.slots?.[position]?.session_id;
+        ? publisherState.controller?.session_id
+        : publisherState.slots?.[position]?.session_id;
     assert.equal(typeof value, 'string', `Missing ${position} session`);
     return value;
   };
@@ -768,7 +779,14 @@ try {
   });
   if (realPublisherSnapshot) {
     assert.equal(realPublisherSnapshot.relationshipMode, 'event-backed');
-    assert.equal(realPublisherSnapshot.nodes.length, 22);
+    assert.equal(
+      realPublisherSnapshot.nodes.length,
+      22,
+      `Real publisher nodes: ${realPublisherSnapshot.nodes
+        .map(node => node.id)
+        .sort()
+        .join(', ')}`,
+    );
     assert.equal(realPublisherSnapshot.edges.length, 10);
     assert.equal(realPublisherSnapshot.telemetry?.status, 'ok');
     assert.equal(
