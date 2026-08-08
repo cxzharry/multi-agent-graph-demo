@@ -120,9 +120,12 @@ async function publishRealFlowSnapshot({baseUrl, temporaryDirectory}) {
   }
   for (const slot of Object.values(publisherState.slots)) {
     if (!removedLaneIds.has(slot.lane_id)) continue;
+    const sessionRetained = latestRetainedLaneBySession.get(slot.session_id);
     const retained =
-      latestRetainedLaneBySession.get(slot.session_id) ??
-      latestRetainedLaneByWorker.get(slot.role_name);
+      latestRetainedLaneByWorker.get(slot.role_name) ??
+      (sessionRetained?.agent_name === slot.role_name
+        ? sessionRetained
+        : undefined);
     assert.ok(retained, `Missing retained fixture lane for ${slot.role_name}`);
     slot.lane_id = retained.lane_id;
     slot.session_id = retained.session_id;
