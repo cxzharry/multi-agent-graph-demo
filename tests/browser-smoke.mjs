@@ -96,10 +96,47 @@ async function publishRealFlowSnapshot({baseUrl, temporaryDirectory}) {
 
   const state = JSON.parse(await readFile(statePath, 'utf8'));
   const publisherState = structuredClone(state);
-  if (publisherState.lanes?.protocol_visual_runtime_remediation) {
-    delete publisherState.lanes.protocol_visual_runtime_remediation;
-    publisherState.slots.P4.lane_id = 'protocol_visual_remediation';
-    publisherState.slots.P4.status = 'DONE';
+  const frozenGeneration = 3;
+  const removedLaneIds = new Set();
+  for (const [laneId, lane] of Object.entries(publisherState.lanes)) {
+    if (lane.generation <= frozenGeneration) continue;
+    delete publisherState.lanes[laneId];
+    removedLaneIds.add(laneId);
+  }
+  const latestRetainedLaneBySession = new Map();
+  for (const lane of Object.values(publisherState.lanes)) {
+    if (!lane.session_id) continue;
+    const latest = latestRetainedLaneBySession.get(lane.session_id);
+    if (
+      !latest ||
+      lane.generation > latest.generation ||
+      (lane.generation === latest.generation && lane.lane_id > latest.lane_id)
+    ) {
+      latestRetainedLaneBySession.set(lane.session_id, lane);
+    }
+  }
+  for (const slot of Object.values(publisherState.slots)) {
+    if (!removedLaneIds.has(slot.lane_id)) continue;
+    const retained = latestRetainedLaneBySession.get(slot.session_id);
+    assert.ok(retained, `Missing retained fixture lane for ${slot.session_id}`);
+    slot.lane_id = retained.lane_id;
+    slot.status = retained.state === 'ACTIVE' ? 'BUSY' : 'DONE';
+  }
+  assert.deepEqual(
+    Object.entries(publisherState.lanes)
+      .filter(([, lane]) => lane.generation > frozenGeneration)
+      .map(([laneId]) => laneId),
+    [],
+    `Real publisher fixture must exclude lanes after generation ${frozenGeneration}`,
+  );
+  for (const [position, slot] of Object.entries(publisherState.slots)) {
+    if (!slot.session_id) continue;
+    const retained = latestRetainedLaneBySession.get(slot.session_id);
+    assert.equal(
+      slot.lane_id,
+      retained?.lane_id,
+      `${position} must point to its latest retained fixture lane`,
+    );
   }
   const publisherStatePath = path.join(
     temporaryDirectory,
