@@ -1116,7 +1116,7 @@ try {
     runId: 'herdr-graph-viewer-space-selector-20260802',
     generatedAt: new Date(recentEpochMilliseconds - 2000).toISOString(),
     title:
-      'Auto operational view — herdr-graph-viewer-space-selector-20260802',
+      'Auto operational view - herdr-graph-viewer-space-selector-20260802',
   };
   selectorLayout.nodes[0] = {
     ...selectorLayout.nodes[0],
