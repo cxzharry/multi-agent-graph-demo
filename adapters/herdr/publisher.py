@@ -458,10 +458,12 @@ def _apply_synthetic_flow(snapshot: dict, projection: dict) -> None:
         node["assignee"]: node for node in snapshot["nodes"]
     }
     projected_assignees = set()
+    projected_ids = set()
     nodes = []
     for original in projection["nodes"]:
         node = copy.deepcopy(original)
         projected_assignees.add(node["assignee"])
+        projected_ids.add(node["id"])
         authored = authored_by_assignee.get(node["assignee"])
         if authored is not None:
             if "result" not in node:
@@ -475,6 +477,7 @@ def _apply_synthetic_flow(snapshot: dict, projection: dict) -> None:
         copy.deepcopy(node)
         for node in snapshot["nodes"]
         if node["assignee"] not in projected_assignees
+        and node["id"] not in projected_ids
     )
     snapshot["nodes"] = nodes
     snapshot["edges"] = copy.deepcopy(projection["edges"])

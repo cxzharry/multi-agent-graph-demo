@@ -1490,7 +1490,7 @@ class EventBackedControlSnapshotTests(unittest.TestCase):
             ],
         )
 
-    def test_controller_identity_seeds_running_p1_when_slot_identity_is_missing(self):
+    def test_empty_event_prefix_seeds_one_running_p1_from_controller_identity(self):
         self.state["slots"]["P1"].update(
             {"status": "COLD", "session_id": None, "pane_id": None}
         )
@@ -1503,12 +1503,15 @@ class EventBackedControlSnapshotTests(unittest.TestCase):
             synthesize_manifest(self.state),
             "wK",
             SPACE_NAME,
-            flow_events=self.events,
+            flow_events=[],
             synthetic=True,
         )
-        p1 = next(node for node in snapshot["nodes"] if node["id"] == "orchestrator")
+        orchestrators = [
+            node for node in snapshot["nodes"] if node["id"] == "orchestrator"
+        ]
 
-        self.assertEqual("running", p1["liveness"])
+        self.assertEqual(1, len(orchestrators))
+        self.assertEqual("running", orchestrators[0]["liveness"])
 
     def test_custom_manifest_preserves_authored_topology_byte_for_byte(self):
         manifest = fixture_manifest()
