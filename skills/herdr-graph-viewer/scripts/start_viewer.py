@@ -424,8 +424,11 @@ def _publisher_matches_state(
 ) -> bool:
     for argv in _publisher_argvs(process_info):
         if not _publisher_state_matches(
-            argv, state_path, workspace_id, endpoint, watch, flow_journal
+            argv, state_path, workspace_id, endpoint, watch
         ):
+            continue
+        observed_journal = _argv_value(argv, "--flow-journal")
+        if flow_journal is not None and observed_journal not in (None, flow_journal):
             continue
         mode_count = int("--synthesize" in argv) + int(
             _argv_value(argv, "--manifest") is not None

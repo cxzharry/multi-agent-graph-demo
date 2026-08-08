@@ -679,6 +679,7 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
         launcher = self.require_launcher()
         target = Path("/tmp/run/workspace-state.json")
         endpoint = "http://127.0.0.1:4173/api/snapshots"
+        journal = "/tmp/run/flow-events/run.jsonl"
         command = (
             "python3 -B adapters/herdr/publisher.py "
             f"--state {target} --synthesize --workspace-id w1 "
@@ -703,11 +704,16 @@ class RuntimeRecoveryContractTest(unittest.TestCase):
                 }
             raise AssertionError(args)
 
-        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+        with mock.patch.object(
+            launcher, "_herdr", side_effect=fake_herdr
+        ), mock.patch.object(launcher, "_split_pane") as split_pane:
             with self.assertRaises(launcher.LauncherError) as raised:
-                launcher._find_publisher_for_state("w1", target, endpoint)
+                launcher._find_publisher_for_state(
+                    "w1", target, endpoint, journal
+                )
 
         self.assertEqual(raised.exception.code, "ambiguous_publisher")
+        split_pane.assert_not_called()
 
     def test_legacy_server_mapping_requires_exact_node_server_command(self):
         launcher = self.require_launcher()
@@ -2525,6 +2531,156 @@ class StartViewerTest(unittest.TestCase):
             self.assertIn("--replace-current", replacement[0][3].split())
             self.assertFalse(any(call[:2] == ("pane", "split") for call in calls))
             self.assertFalse(result["publisher"]["reused"])
+
+    def test_missing_flow_journal_restarts_state_bound_publisher_in_same_pane(self):
+        launcher = self.require_launcher()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            self.write_runtime_tree(repo)
+            manifest = root / "role-graph-manifest.json"
+            self.write_manifest(manifest)
+            state = self.write_state(
+                root,
+                "current",
+                workspace="w1",
+                pane="w1:p1",
+                run_id="current-run",
+                revision=8,
+                role_graph_manifest=str(manifest),
+            )
+            endpoint = "http://127.0.0.1:4173/api/snapshots"
+            publisher_fingerprint = launcher.publisher_runtime_fingerprint(repo)
+            journal = launcher.flow_journal_path(root, "w1", "current-run")
+            legacy_command = (
+                "python3 -B adapters/herdr/publisher.py "
+                f"--state {state.resolve()} --manifest {manifest.resolve()} "
+                "--workspace-id w1 --space-name herdr-orchestrator "
+                f"--endpoint {endpoint} "
+                f"--runtime-fingerprint {publisher_fingerprint} "
+                "--watch --interval 2"
+            )
+            calls: list[tuple[str, ...]] = []
+            publisher_stopped = False
+
+            def fake_herdr(*args):
+                nonlocal publisher_stopped
+                calls.append(args)
+                if args[:2] == ("workspace", "list"):
+                    return self.workspace_list()
+                if args[:2] == ("pane", "list"):
+                    return {
+                        "result": {
+                            "panes": [
+                                {
+                                    "pane_id": "publisher-existing",
+                                    "agent_status": "unknown",
+                                }
+                            ]
+                        }
+                    }
+                if args[:2] == ("pane", "process-info"):
+                    return {
+                        "result": {
+                            "process_info": {
+                                "foreground_processes": (
+                                    []
+                                    if publisher_stopped
+                                    else [{"cmdline": legacy_command}]
+                                )
+                            }
+                        }
+                    }
+                if args[:2] == ("pane", "send-keys"):
+                    publisher_stopped = True
+                    return {"result": {}}
+                if args[:2] == ("pane", "split"):
+                    return {"result": {"pane": {"pane_id": "publisher-new"}}}
+                if args[:2] in {("pane", "rename"), ("pane", "run")}:
+                    return {"result": {}}
+                raise AssertionError(args)
+
+            args = Namespace(
+                state=state,
+                manifest=None,
+                repo=repo,
+                runs_root=root,
+                port_start=4173,
+                port_end=4173,
+            )
+            snapshot = {
+                "spaceName": "herdr-orchestrator",
+                "scopeId": "herdr:w1",
+                "runId": "current-run",
+                "sequence": 8,
+                "publisherFingerprint": publisher_fingerprint,
+            }
+
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "HERDR_ENV": "1",
+                    "HERDR_WORKSPACE_ID": "w1",
+                    "HERDR_PANE_ID": "w1:p1",
+                },
+                clear=True,
+            ), mock.patch.object(
+                launcher, "_herdr", side_effect=fake_herdr
+            ), mock.patch.object(
+                launcher, "probe_viewer", return_value="viewer-current"
+            ), mock.patch.object(
+                launcher, "_snapshot", return_value=snapshot
+            ):
+                result = launcher.launch(args)
+
+            self.assertEqual(result["publisher"]["pane_id"], "publisher-existing")
+            self.assertTrue(result["publisher"]["replaced"])
+            self.assertFalse(result["publisher"]["reused"])
+            self.assertIn(
+                ("pane", "send-keys", "publisher-existing", "ctrl+c"), calls
+            )
+            publisher_runs = [
+                call for call in calls if call[:2] == ("pane", "run")
+            ]
+            self.assertEqual(len(publisher_runs), 1)
+            self.assertEqual(publisher_runs[0][2], "publisher-existing")
+            self.assertIn(f"--flow-journal {journal}", publisher_runs[0][3])
+            self.assertFalse(any(call[:2] == ("pane", "split") for call in calls))
+
+    def test_state_fallback_rejects_a_different_explicit_flow_journal(self):
+        launcher = self.require_launcher()
+        target = Path("/tmp/run/workspace-state.json")
+        endpoint = "http://127.0.0.1:4173/api/snapshots"
+        command = (
+            "python3 -B adapters/herdr/publisher.py "
+            f"--state {target} --synthesize --workspace-id w1 "
+            "--space-name herdr-orchestrator "
+            f"--endpoint {endpoint} "
+            "--flow-journal /tmp/run/flow-events/other.jsonl --watch"
+        )
+
+        def fake_herdr(*args):
+            if args[:2] == ("pane", "list"):
+                return {"result": {"panes": [{"pane_id": "publisher"}]}}
+            if args[:2] == ("pane", "process-info"):
+                return {
+                    "result": {
+                        "process_info": {
+                            "foreground_processes": [{"cmdline": command}]
+                        }
+                    }
+                }
+            raise AssertionError(args)
+
+        with mock.patch.object(launcher, "_herdr", side_effect=fake_herdr):
+            match = launcher._find_publisher_for_state(
+                "w1",
+                target,
+                endpoint,
+                "/tmp/run/flow-events/current.jsonl",
+            )
+
+        self.assertEqual(match, launcher.ProcessMatch(None, "missing"))
 
     def test_mode_replacement_ignores_agent_panes(self):
         launcher = self.require_launcher()
