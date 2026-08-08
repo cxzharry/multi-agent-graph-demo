@@ -153,7 +153,7 @@ def build_session_snapshot(
         "publisherFingerprint": publisher_fingerprint,
         "sequence": sequence,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "title": f"Current Herdr session — {space_name}",
+        "title": f"Current Herdr session - {space_name}",
         "nodes": nodes,
         "edges": [],
         "failurePolicies": [],

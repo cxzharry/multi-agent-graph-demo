@@ -220,7 +220,7 @@ def synthesize_manifest(state: dict) -> dict:
     return {
         "schemaVersion": "herdr-role-graph-manifest/v1",
         "flowId": "auto-operational",
-        "title": f"Auto operational view — {run_id}",
+        "title": f"Auto operational view - {run_id}",
         "nodes": nodes,
         # Synthetic mode observes nodes and statuses but has no trusted
         # workflow-edge source, so it fabricates no relationships. P1 stays in
